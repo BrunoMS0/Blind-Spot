@@ -1,0 +1,6 @@
+{
+  // Servidor, scripts y config de Vite: Node, sin DOM.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2022"], "types": ["node"], "allowImportingTsExtensions": true },
+  "include": ["server", "scripts", "src/shared", "vite.config.ts"]
+}

@@ -1,0 +1,6 @@
+{
+  // Reglas puras: ni DOM ni Node. Si algo aquí usa window o process, typecheck falla.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2022"], "types": [] },
+  "include": ["."]
+}

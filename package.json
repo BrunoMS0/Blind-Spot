@@ -1,0 +1,29 @@
+{
+  "name": "el-golpe",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c yellow,cyan \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch --env-file=.env server/index.ts",
+    "dev:client": "vite",
+    "typecheck": "tsc -p src/shared --noEmit && tsc -p src/client --noEmit && tsc -p . --noEmit",
+    "jev:ping": "tsx --env-file=.env scripts/jev-ping.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "hono": "^4.13.9",
+    "phaser": "^3.90.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "concurrently": "^10.0.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
+  }
+}
