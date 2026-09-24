@@ -1,7 +1,7 @@
 // Convierte el análisis del código en lo único que ve Jev: un estado corto en inglés y las preguntas.
 // Nunca coordenadas ni cuadrícula: zonas, distancias de camino ya calculadas y conclusiones por opción.
 import { choice, noul, type JsonValue } from "@typesafe-ai/sdk";
-import { ALARM_TO_LOSE } from "../src/shared/config";
+import { ALARM_TO_LOSE, SIGHTING_TURNS } from "../src/shared/config";
 import { zoneAt, type Level } from "../src/shared/level";
 import type { GameState, GuardAnalysis, GuardOption, OptionFacts, TurnAnalysis, Vec } from "../src/shared/types";
 import { DOCTRINES } from "./doctrines";
@@ -38,6 +38,7 @@ export function buildJevTurn(level: Level, s: GameState, analysis: TurnAnalysis)
     radio_trust: RADIO_TRUST[analysis.radioTrust],
     radio_report: report ? (report.kind === "movement" ? `movement in the ${zone(report.zone)}` : `all clear in the ${zone(report.zone)}`) : "none",
     noises_this_turn: s.noises.length ? s.noises.map((n) => `a coin in the ${zone(zoneAt(level, n.pos) ?? "")}`) : "none",
+    sightings: sightings(level, s),
   };
 
   const guards: { [id: string]: JsonValue } = {};
@@ -67,6 +68,20 @@ export function buildJevTurn(level: Level, s: GameState, analysis: TurnAnalysis)
   return { jevState: { shared, guards }, questions };
 }
 
+/** Quién vio a un intruso y cuándo: la evidencia que necesita raise_alarm, en el estado compartido. */
+function sightings(level: Level, s: GameState): JsonValue {
+  const seen = s.guards.flatMap((g) => {
+    const sight = g.lastSighting;
+    if (!sight || s.turn - sight.turn > SIGHTING_TURNS) return [];
+    const name = level.guards.find((x) => x.id === g.id)?.name ?? g.id;
+    const where = level.zones[zoneAt(level, sight.pos) ?? ""]?.name ?? "museum";
+    return [`${name} saw an intruder in the ${where} ${ago(s.turn - sight.turn)}`];
+  });
+  return seen.length ? seen : "none";
+}
+
+const ago = (turns: number) => (turns === 0 ? "this turn" : turns === 1 ? "last turn" : `${turns} turns ago`);
+
 /** Una frase corta por opción: la conclusión del código, no los datos crudos. */
 function describe(level: Level, s: GameState, from: Vec, a: GuardAnalysis, option: GuardOption, f: OptionFacts): string {
   const where = level.zones[f.zone]?.name ?? f.zone;
@@ -78,10 +93,8 @@ function describe(level: Level, s: GameState, from: Vec, a: GuardAnalysis, optio
       return `heard a coin drop in the ${where}, ${away}`;
     case "respond_radio":
       return `radio reports movement in the ${where}, ${away}`;
-    case "chase": {
-      const ago = s.turn - (s.guards.find((g) => g.id === a.guard)?.lastSighting?.turn ?? s.turn);
-      return `saw an intruder in the ${where} ${ago === 0 ? "this turn" : ago === 1 ? "last turn" : `${ago} turns ago`}, ${away}`;
-    }
+    case "chase":
+      return `saw an intruder in the ${where} ${ago(s.turn - (s.guards.find((g) => g.id === a.guard)?.lastSighting?.turn ?? s.turn))}, ${away}`;
     case "guard_vault":
       return s.vault.open ? `THE VAULT DOOR IS OPEN, ${away}` : `vault door closed and locked, ${away}`;
     case "hold":

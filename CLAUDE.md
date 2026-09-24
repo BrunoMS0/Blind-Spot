@@ -42,15 +42,18 @@ que las features.** Reglas, módulos, flujo de un turno y eventos están en `ARC
 ## Política ante 429 (plan gratuito del gateway)
 
 Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 30 llamadas por minuto.
+(En El golpe, 2026-09-24: 0 × 429 en 35 llamadas espaciadas 2 s.) Todo vive en `server/providers/jev.ts`:
 
-- Reintentos del propio SDK: `respectRetryAfter`, espera creciente, y un tope total de ~30 s con
-  `AbortSignal.timeout` (el SDK no tiene tope total). Mientras tanto, la interfaz muestra "Los guardias están
-  pensando…".
-- Si aun así falla: 503 y el jugador elige **Reintentar** o **Usar decisión simulada** (mock, registrada como
-  `source: "respaldo"`). Las métricas excluyen las de respaldo.
-- Limitador: intervalo mínimo entre llamadas (`JEV_MIN_INTERVAL_MS`).
+- Reintentos del propio SDK: respeta `Retry-After`, si no espera 1·2·4·8·8… s; tope total
+  `JEV_RETRY_TOTAL_MS` con un `AbortSignal` (el SDK no tiene tope total). La interfaz muestra "pensando".
+- Si aun así falla: `JevUnavailable` → 503 con `retryable`, y el jugador elige **Reintentar** o **Usar
+  decisión simulada** (mock, registrada como `source: "respaldo"`). Las métricas excluyen las de respaldo.
+  No agregar respaldos automáticos: el jugador decide.
+- Limitador: de a una llamada y `JEV_MIN_INTERVAL_MS` entre inicios. Por eso el conteo de 429 por llamada
+  (`rateLimited`, contado en un `fetch` envoltorio) es exacto.
 - Caché por (estado, preguntas): la infiltrada y el turno enemigo no repiten una llamada idéntica.
-- Tope diario `JEV_DAILY_BUDGET_USD`; al superarlo, pasa a mock y lo avisa.
+- Tope diario `JEV_DAILY_BUDGET_USD`; al superarlo, decide el mock y se avisa en `meta.note`.
+- Las pruebas de 429 usan un `fetch` falso (`tests/jev.test.ts`): no tocan el gateway.
 
 ## Reglas operativas
 
@@ -60,7 +63,10 @@ Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 
 - `GameStateSchema` usa `satisfies z.ZodType<GameState>`: si cambias `GameState`, typecheck obliga a
   actualizar el esquema.
 - Registro JSONL en `logs/decisions-YYYY-MM-DD.jsonl` (`DecisionRecord`). El modo replay lee esos archivos.
-- Todo cambio en el estado para Jev, las preguntas o las doctrinas se mide con `bench.ts` antes de darlo por bueno.
+- Todo cambio en el estado para Jev, las preguntas o las doctrinas se mide con `npm run bench -- --real --save
+  vN` y se compara con la versión anterior (`logs/bench-v*.json`) antes de darlo por bueno. Los pares del banco
+  cambian solo el comandante; agregar situaciones al final, no cambiar las existentes.
+  Historial: v1 9/11; v2 11/11 (rencoroso atado a `shared.radio_trust`, `shared.sightings`). Mock: 7/11.
 - Reutilizar de `../BomberJev` lo que sirva (proveedores, budget, decision-log, rate-probe) en vez de reescribirlo.
 - Arte y personajes originales.
 
@@ -72,14 +78,16 @@ Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 
    llamada completa, repetición del turno enemigo.
 4. Pulido: estilo noir, luz 2D desde las linternas, partículas, tweens, selector de comandante.
 
-Estado: fases 0 y 1 hechas (reglas con pruebas, juego jugable con el mock). Siguiente: fase 2.
+Estado: fases 0, 1 y 2 hechas (Jev real con 429, limitador, caché, registro, replay y banco). Siguiente: fase 3.
 
 ## Comandos
 
 - `npm run dev`: Vite (5173) + servidor (8787); Vite redirige `/api`. Requiere `.env` (ver `.env.example`).
 - `npm run typecheck`: tres proyectos: shared (puro), client (DOM), server/scripts (Node).
 - `npm run jev:ping`: lista los modelos y hace una llamada real a Jev, sin reintentos (~$0.00002).
-- `npm test`: pruebas de reglas y del turno del servidor (`node:test` vía tsx, sin dependencias extra).
+- `npm test`: pruebas de reglas, del turno del servidor y de 429 (`node:test` vía tsx, sin tocar el gateway).
+- `npm run bench` (mock) / `npm run bench -- --real [--save vN]` (~11 llamadas, ~$0.0007).
+- Modo: `JEV_MODE=mock|real|replay` en `.env` (o `JEV_MODE=real npm run dev` para una sola vez).
 - Partida: `http://localhost:5173/?commander=impulsivo&seed=123` (misma semilla = misma partida).
   Teclas: 1·2·3 ladrón, Esc cancela, Enter termina el turno. Depurar: `__game.scene.getScene("game").state`.
 - Probar en Chrome: si la ventana queda tapada, Chrome la marca `hidden`, `requestAnimationFrame` se detiene

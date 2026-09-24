@@ -22,7 +22,8 @@ Estado que ve Jev (ejemplo; lo arma `server/jev-state.ts`):
     "alarm_level": "1 of 3",
     "radio_trust": "shaken after a false report",
     "radio_report": "movement in the west gallery",
-    "noises_this_turn": ["a coin in the central hall"]
+    "noises_this_turn": ["a coin in the central hall"],
+    "sightings": ["Rojas saw an intruder in the central hall last turn"]
   },
   "guards": {
     "vega": {
@@ -61,15 +62,18 @@ un guardia no use la información de otro.
 | `src/shared/rng.ts` | RNG con semilla (mulberry32) y sorteo de opciones según probabilidades | 1 |
 | `src/client/game-scene.ts` | Capas, input del mapa, animación de eventos. Comandos que usa la interfaz | 0→4 |
 | `src/client/ui-scene.ts` | Barra superior, panel, registro, fin de partida. Se redibuja con cada cambio | 0→4 |
-| `src/client/api.ts` | `requestEnemyTurn(state)` | 1→2 |
-| `server/index.ts` | Hono: `/api/health`, `/api/enemy-turn` (fase 1), `/api/spy` (fase 2) | 0→2 |
-| `server/turn.ts` | Un turno enemigo: valida contra el nivel, analiza, arma preguntas, proveedor, sorteo | 1→2 |
+| `src/client/api.ts` | `requestTurn(endpoint, state, fallback)`; `TurnFailed` con `retryable` | 1→2 |
+| `server/index.ts` | Hono: `/api/health`, `/api/enemy-turn`, `/api/spy`. Escribe el registro y suma el gasto | 0→2 |
+| `server/turn.ts` | Un pedido: valida contra el nivel, analiza, arma preguntas, elige proveedor, sortea. Devuelve respuesta y registro | 1→2 |
 | `server/jev-state.ts` | `TurnAnalysis` + doctrina → estado en inglés + preguntas | 1 |
-| `server/doctrines.ts` | El texto de las tres doctrinas | 1 |
-| `tests/rules.test.ts` | Reglas, análisis, sorteo, contrato zod y 20 turnos con el mock (`npm test`) | 1 |
-| `server/providers/` | `DecisionProvider`: `mock`, `jev`, `replay` (`JEV_MODE`) | 0→2 |
-| `server/limiter.ts`, `budget.ts`, `decision-log.ts` | Intervalo mínimo, tope diario, JSONL | 2 |
-| `scripts/` | `jev-ping.ts`, `rate-probe.ts`, `bench.ts` | 2 |
+| `server/doctrines.ts` | El texto de las tres doctrinas (medido con `bench.ts`) | 1→2 |
+| `server/env.ts` | Variables de entorno validadas con zod (ver `.env.example`) | 2 |
+| `server/providers/mock.ts` | Heurística sin doctrina: la línea base "solo código" | 1 |
+| `server/providers/jev.ts` | Jev real: reintentos ante 429, tope total, limitador, caché, conteo de 429 | 2 |
+| `server/providers/replay.ts` | Respuestas grabadas para situaciones idénticas; si no hay, mock con aviso | 2 |
+| `server/budget.ts`, `decision-log.ts` | Tope diario (se recupera del JSONL al reiniciar) y registro JSONL | 2 |
+| `scripts/jev-ping.ts`, `bench.ts` | Verificar la conexión; banco de situaciones con conducta esperada | 0→2 |
+| `tests/` | Reglas, análisis, sorteo, contrato zod, 20 turnos con el mock, 429 con un fetch falso | 1→2 |
 
 `src/shared` es puro: su tsconfig no tiene DOM ni tipos de Node, así que `npm run typecheck` falla si una regla
 toca `window` o `process`. Las reglas nunca dibujan: devuelven estado nuevo y eventos.
@@ -91,20 +95,27 @@ toca `window` o `process`. Las reglas nunca dibujan: devuelven estado nuevo y ev
 1. El cliente manda `POST /api/enemy-turn { state }`.
 2. El servidor valida con zod, carga el nivel y llama a `analyzeTurn()`.
 3. `jev-state.ts` convierte el análisis y la doctrina en estado y preguntas.
-4. **Caché** por hash de (estado, preguntas). Si la infiltrada ya preguntó exactamente esto, se reutiliza sin
-   llamar.
-5. Limitador (`JEV_MIN_INTERVAL_MS`) → tope diario (si se superó: mock y aviso) → proveedor de `JEV_MODE`.
-6. **Sorteo** (`SAMPLING=sample|argmax`): la opción de cada guardia se sortea con las probabilidades de Jev,
+4. Proveedor de `JEV_MODE` (con `fallback: true`, el mock; si se superó el tope diario, el mock con aviso).
+   En modo real: **caché** por (estado, preguntas) → si la infiltrada ya preguntó exactamente esto, no se
+   llama; si no, **limitador** (de a una llamada, `JEV_MIN_INTERVAL_MS` entre inicios) → `systemOne`.
+5. **Sorteo** (`SAMPLING=sample|argmax`): la opción de cada guardia se sortea con las probabilidades de Jev,
    con un RNG sembrado por semilla + turno + guardia. `raise_alarm` se sortea como sí/no con su probabilidad.
-7. Registro JSONL y respuesta `TurnResponse`: probabilidades, opción sorteada y `raise_alarm` por guardia.
-8. El cliente llama a `resolveEnemyTurn()`: `guard_decided`, `guard_moved` (visión revisada en cada paso),
+   Como la semilla es la misma, la infiltrada y el turno enemigo sortean igual con la misma respuesta.
+6. Respuesta `TurnResponse` (probabilidades, opción sorteada y `raise_alarm` por guardia; `meta` con modo,
+   respaldo, caché, latencia y avisos) y una línea en `logs/decisions-YYYY-MM-DD.jsonl` (`DecisionRecord`).
+7. El cliente llama a `resolveEnemyTurn()`: `guard_decided`, `guard_moved` (visión revisada en cada paso),
    `thief_seen`, `alarm_raised`, `thief_caught`, `deception_discovered`, `turn_ended`, `game_over`.
-9. La escena anima los eventos en orden.
+8. La escena anima los eventos en orden.
 
-**Si Jev falla** (429): el SDK reintenta respetando `Retry-After`, con espera creciente, hasta ~30 s en total
-mientras la interfaz muestra "Los guardias están pensando…". Si aun así falla, el servidor responde 503
-(`TurnError`) y el jugador elige **Reintentar** o **Usar decisión simulada**. La segunda opción reenvía con
-`fallback: true`: responde el mock y se registra con `source: "respaldo"`.
+**Si Jev falla** (429): el SDK reintenta respetando `Retry-After` y, si no viene, espera 1, 2, 4, 8, 8… s. Un
+`AbortSignal` corta todo a `JEV_RETRY_TOTAL_MS` (~30 s) mientras la interfaz muestra "Los guardias están
+pensando…". Si aun así falla, el servidor responde 503 (`TurnError` con `retryable`) y el jugador elige
+**Reintentar** (si tiene sentido) o **Usar decisión simulada**, que reenvía con `fallback: true`: responde el
+mock y se registra con `source: "respaldo"`. Cada decisión registra cuántos 429 hubo (`rateLimited`).
+
+**Replay** (`JEV_MODE=replay`): reproduce las respuestas grabadas de Jev para situaciones idénticas. Con la
+misma semilla y las mismas jugadas se repite una partida entera sin llamar a Jev (verificado: 13 turnos
+idénticos). Una situación sin grabación la decide el mock y lo avisa en `meta.note`.
 
 ## Reglas del juego (primer nivel)
 

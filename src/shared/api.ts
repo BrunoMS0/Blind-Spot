@@ -72,6 +72,8 @@ export interface TurnResponse {
     latencyMs: number;
     /** Se reutilizó una respuesta anterior con el mismo estado: no hubo llamada. */
     cached: boolean;
+    /** Aviso para el jugador, p. ej. tope diario alcanzado o replay sin grabación para esta situación. */
+    note?: string;
   };
 }
 

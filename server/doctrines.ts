@@ -8,5 +8,5 @@ export const DOCTRINES: Record<CommanderId, string> = {
   impulsivo:
     "Impulsive commander. React to everything right away: every noise, every radio report and every sighting deserves a guard running to it now. Patrolling or standing still while something is happening is a failure.",
   rencoroso:
-    "Vengeful commander. Trusts the radio until it lies once. After a false report, ignore the radio completely and hunt aggressively: chase sightings, investigate noises and raise the alarm quickly.",
+    'Vengeful commander. Trusts the radio only while `shared.radio_trust` is "high". Once the radio has lied even once, every radio report is a trap: never respond to it. Instead hunt aggressively: chase sightings, investigate noises and raise the alarm as soon as an intruder has been seen.',
 };

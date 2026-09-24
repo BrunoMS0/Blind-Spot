@@ -6,7 +6,8 @@ import { coinTargets, moveThief, reachable, sendRadio, thiefAct } from "../share
 import { activeThieves, clone, newGame, type Result } from "../shared/rules";
 import type { CommanderId, Facing, GameEvent, GameState, ThiefAction, ThiefId, Vec } from "../shared/types";
 import { visibleTiles } from "../shared/vision";
-import { requestEnemyTurn } from "./api";
+import type { TurnResponse } from "../shared/api";
+import { requestTurn, TurnFailed } from "./api";
 
 // Phaser solo dibuja, anima y lee input. Toda regla sale de src/shared: esta escena aplica una acción,
 // anima los eventos que devuelve y se queda con el estado nuevo.
@@ -40,6 +41,10 @@ export class GameScene extends Phaser.Scene {
   mode: Mode = "move";
   busy = false;
   status = "";
+  /** El último turno enemigo falló: la interfaz ofrece reintentar o usar el respaldo. */
+  failed: TurnFailed | null = null;
+  /** Quién decidió el último turno enemigo (modo, respaldo, caché, latencia). */
+  lastMeta: TurnResponse["meta"] | null = null;
 
   private mapGfx!: Phaser.GameObjects.Graphics;
   private hintGfx!: Phaser.GameObjects.Graphics;
@@ -123,20 +128,27 @@ export class GameScene extends Phaser.Scene {
     void this.apply(thiefAct(this.level, this.state, this.selected, { type }));
   }
 
-  async endTurn(): Promise<void> {
+  /**
+   * Pide el turno enemigo y lo resuelve. Mientras el servidor reintenta ante 429 (hasta ~30 s) se muestra
+   * "pensando". Si falla, `failed` queda puesto y la interfaz ofrece reintentar o `endTurn(true)` (respaldo).
+   */
+  async endTurn(fallback = false): Promise<void> {
     if (this.busy || this.state.outcome.status !== "playing") return;
     this.busy = true;
     this.mode = "move";
-    this.setStatus("Los guardias están pensando…");
+    this.failed = null;
+    this.setStatus(fallback ? "Decisión simulada…" : "Los guardias están pensando…");
     try {
-      const r = await requestEnemyTurn(this.state);
-      this.setStatus("");
+      const r = await requestTurn("enemy-turn", this.state, fallback);
+      this.lastMeta = r.meta;
+      this.setStatus(r.meta.note ?? "");
       const result = resolveEnemyTurn(this.level, this.state, { guards: r.guards, raiseAlarm: r.raiseAlarm.raised });
       await this.play(result.events);
       this.state = result.state;
       this.events.emit("game-events", result.events);
     } catch (e) {
-      this.setStatus(`No se pudo obtener el turno enemigo (${e instanceof Error ? e.message : String(e)}). Vuelve a intentarlo.`);
+      this.failed = e instanceof TurnFailed ? e : new TurnFailed(String(e), true);
+      this.setStatus(`${this.failed.message}. ¿Reintentar o usar una decisión simulada?`);
     }
     if (this.state.thieves[this.selected].caught) this.selected = activeThieves(this.state)[0]?.id ?? this.selected;
     this.busy = false;

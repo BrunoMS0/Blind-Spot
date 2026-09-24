@@ -195,7 +195,7 @@ describe("servidor", () => {
     let s = fresh();
     for (let i = 0; i < 20 && s.outcome.status === "playing"; i++) {
       const offered = Object.fromEntries(analyzeTurn(level, s).guards.map((g) => [g.guard, Object.keys(g.options)]));
-      const r = await decideTurn({ state: s, fallback: false });
+      const { response: r } = await decideTurn("enemy-turn", { state: s, fallback: false });
       for (const g of r.guards) assert.ok(offered[g.guard]!.includes(g.option), `${g.guard}: ${g.option}`);
       s = resolveEnemyTurn(level, s, { guards: r.guards, raiseAlarm: r.raiseAlarm.raised }).state;
       GameStateSchema.parse(s);

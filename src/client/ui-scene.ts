@@ -103,9 +103,14 @@ export class UIScene extends Phaser.Scene {
     text(PANEL.x, y, r ? `Activo: "${r.kind === "movement" ? "movimiento" : "todo despejado"} en ${b.level.zones[r.zone]?.label}"` : "Sin reporte activo.");
     y += 24;
 
-    // estado, registro y fin de turno
-    text(PANEL.x, y, b.status, { color: "#c9a3ff", wordWrap: { width: PANEL.w } });
+    // estado (pensando, avisos, fallos), registro y fin de turno
+    text(PANEL.x, y, b.status, { color: b.failed ? "#ff8080" : "#c9a3ff", wordWrap: { width: PANEL.w } });
     y += 34;
+    if (b.failed && !b.busy) {
+      const w = b.failed.retryable ? button(PANEL.x, y, "Reintentar", () => void b.endTurn()).width + 8 : 0;
+      button(PANEL.x + w, y, "Usar decisión simulada", () => void b.endTurn(true));
+      y += 30;
+    }
     section("Registro");
     text(PANEL.x, y, this.log.join("\n"), { fontSize: "11px", lineSpacing: 2 });
     button(PANEL.x, BOTTOM - 26, "Terminar turno ▶  (Enter)", () => void b.endTurn(), !b.busy && s.outcome.status === "playing");
@@ -152,8 +157,11 @@ export class UIScene extends Phaser.Scene {
         return ["¡La bóveda está abierta!"];
       case "diamond_taken":
         return [`${thief(e.thief)} tomó el diamante`];
-      case "turn_ended":
-        return [`── fin del turno ${e.turn} ──`];
+      case "turn_ended": {
+        const m = this.board.lastMeta;
+        const who = !m ? "" : m.source === "respaldo" ? " · respaldo" : ` · ${m.mode}${m.cached ? " (caché)" : ""} ${m.latencyMs} ms`;
+        return [`── fin del turno ${e.turn}${who} ──`];
+      }
       case "game_over":
         return [e.outcome.status === "won" ? "¡Victoria!" : `Derrota: ${LOSS[e.outcome.reason]}`];
       case "thief_moved":

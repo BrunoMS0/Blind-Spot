@@ -1,20 +1,11 @@
 // Verifica la conexión con Jev: lista los modelos del gateway y hace UNA llamada real.
 // Sin reintentos a propósito: si el gateway devuelve 429, se ve aquí en vez de quedar oculto.
 //   npm run jev:ping
-// ponytail: crea su propio cliente; en la fase 2 usará el de server/providers/jev.ts.
-import { choice, noul, RateLimitError, TypeSafeClient } from "@typesafe-ai/sdk";
+import { choice, noul, RateLimitError } from "@typesafe-ai/sdk";
+import { env, USD_PER_INPUT_TOKEN } from "../server/env";
+import { createJevClient } from "../server/providers/jev";
 
-const USD_PER_INPUT_TOKEN = 0.042 / 1_000_000;
-const model = process.env.JEV_MODEL || "jev";
-if (!process.env.AI_GATEWAY_API_KEY) throw new Error("AI_GATEWAY_API_KEY is not set in .env");
-
-const client = new TypeSafeClient({
-  apiKey: process.env.AI_GATEWAY_API_KEY,
-  baseURL: "https://ai-gateway.vercel.sh/typesafe",
-  defaultModel: model,
-  retry: { maxRetries: 0 },
-});
-
+const client = createJevClient({ retry: { maxRetries: 0 } });
 try {
   const models = await client.models.list();
   console.log("models:", models.map((m) => m.name));
@@ -28,7 +19,7 @@ try {
     },
   });
   console.log({
-    requestedModel: model,
+    requestedModel: env.JEV_MODEL,
     answeredModel: result.model,
     latencyMs: Math.round(performance.now() - started),
     vega_plan: result.answers.vega_plan.probabilities,
