@@ -1,0 +1,52 @@
+{
+  "id": "museo",
+  "tiles": [
+    "####################",
+    "#....#........#....#",
+    "#....D........#..*.#",
+    "#....#........#....#",
+    "#....#..P..P..##V###",
+    "#....#........#....#",
+    "#....D........#....#",
+    "#....#........D....#",
+    "##D###........#....#",
+    "#....#..P..P..#..P.#",
+    "#....#........#....#",
+    "X....D........D....#",
+    "#....#........#....#",
+    "####################"
+  ],
+  "zoneMap": [
+    "####################",
+    "#wwww#cccccccc#vvvv#",
+    "#wwwwccccccccc#vvvv#",
+    "#wwww#cccccccc#vvvv#",
+    "#wwww#cccccccc##v###",
+    "#wwww#cccccccc#aaaa#",
+    "#wwwwccccccccc#aaaa#",
+    "#wwww#ccccccccaaaaa#",
+    "##e###cccccccc#aaaa#",
+    "#eeee#cccccccc#aaaa#",
+    "#eeee#cccccccc#aaaa#",
+    "eeeeecccccccccaaaaa#",
+    "#eeee#cccccccc#aaaa#",
+    "####################"
+  ],
+  "zones": {
+    "e": { "id": "entrance", "name": "entrance", "label": "Entrada" },
+    "w": { "id": "west_gallery", "name": "west gallery", "label": "Galería oeste" },
+    "c": { "id": "central_hall", "name": "central hall", "label": "Salón central" },
+    "a": { "id": "east_wing", "name": "east wing", "label": "Ala este" },
+    "v": { "id": "vault", "name": "vault", "label": "Bóveda" }
+  },
+  "thieves": {
+    "zorro": { "x": 2, "y": 10 },
+    "llave": { "x": 3, "y": 11 },
+    "eco": { "x": 2, "y": 12 }
+  },
+  "guards": [
+    { "id": "vega", "name": "Vega", "start": { "x": 16, "y": 8 }, "facing": "north", "patrol": [{ "x": 16, "y": 5 }, { "x": 17, "y": 11 }] },
+    { "id": "rojas", "name": "Rojas", "start": { "x": 10, "y": 6 }, "facing": "west", "patrol": [{ "x": 7, "y": 2 }, { "x": 12, "y": 2 }, { "x": 12, "y": 11 }, { "x": 7, "y": 11 }] },
+    { "id": "soto", "name": "Soto", "start": { "x": 1, "y": 2 }, "facing": "east", "patrol": [{ "x": 4, "y": 2 }, { "x": 4, "y": 7 }, { "x": 1, "y": 7 }, { "x": 1, "y": 2 }] }
+  ]
+}

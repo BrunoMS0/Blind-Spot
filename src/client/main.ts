@@ -1,18 +1,26 @@
 import Phaser from "phaser";
-import { GAME_NAME } from "../shared/config";
+import { COMMANDERS, GAME_NAME } from "../shared/config";
 import { GameScene } from "./game-scene";
 import { UIScene } from "./ui-scene";
 
 document.title = GAME_NAME;
 
-// GameScene dibuja el tablero por capas y lanza UIScene, que va encima con la interfaz.
+// ?commander=impulsivo&seed=123 (el selector de comandante llega en la fase 4). La misma semilla repite la partida.
+const params = new URLSearchParams(location.search);
+const commander = COMMANDERS.find((c) => c === params.get("commander")) ?? "cauteloso";
+const seed = Number(params.get("seed")) || Math.floor(Math.random() * 2 ** 31);
+
 // FIT escala el canvas a la ventana conservando la proporción; las coordenadas del juego no cambian.
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
   width: 1152,
   height: 632,
   backgroundColor: "#0d0e14",
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  scene: [GameScene, UIScene],
 });
+game.scene.add("ui", UIScene);
+game.scene.add("game", GameScene, true, { commander, seed }); // GameScene lanza UIScene encima
+
+// Para depurar en la consola: __game.scene.getScene("game").state
+if (import.meta.env.DEV) Object.assign(window, { __game: game });

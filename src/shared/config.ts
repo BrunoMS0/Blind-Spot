@@ -20,6 +20,8 @@ export const VISION_ANGLE_DEG = 90;
 /** Un guardia oye un ruido si está a esta distancia o menos, medida en casillas de camino. */
 export const HEARING_RANGE = 8;
 export const COIN_RANGE = 5;
+/** Un guardia puede perseguir un avistamiento durante ese turno y los SIGHTING_TURNS siguientes. */
+export const SIGHTING_TURNS = 3;
 export const VAULT_FORCE_ACTIONS = 2;
 
 export const ALARM_TO_LOSE = 3;

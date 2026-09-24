@@ -51,17 +51,22 @@ un guardia no use la información de otro.
 | `src/shared/types.ts` | Estado, nivel, acciones, análisis, decisiones y eventos | 0 |
 | `src/shared/api.ts` | Contrato HTTP; `GameStateSchema` (zod) atado al tipo con `satisfies` | 0 |
 | `src/shared/levels/*.json` | Niveles como datos: mapa en texto, zonas, rutas, posiciones iniciales | 1 |
-| `src/shared/level.ts` | Carga y consulta del mapa (casilla, zona, bloqueos) | 1 |
+| `src/shared/level.ts` | Carga (validada con zod) y consulta del mapa: casilla, zona, `solid()` | 1 |
 | `src/shared/paths.ts` | Caminos BFS y distancias de camino | 1 |
 | `src/shared/vision.ts` | Cono de 4 casillas y 90°, bloqueado por muros y pedestales | 1 |
-| `src/shared/player-turn.ts` | Movimiento y acciones de los ladrones, radio, victoria | 1 |
+| `src/shared/rules.ts` | Partida nueva, avistamientos, capturas, engaños y fin de partida (comunes a ambos turnos) | 1 |
+| `src/shared/player-turn.ts` | Movimiento y acciones de los ladrones, radio; consultas para la interfaz | 1 |
 | `src/shared/analysis.ts` | `analyzeTurn()` → `TurnAnalysis`: opciones y hechos de cada guardia | 1 |
 | `src/shared/enemy-turn.ts` | `resolveEnemyTurn(level, state, decisions)` → `{ state, events }` | 1 |
-| `src/shared/rng.ts`, `sample.ts` | RNG con semilla (mulberry32) y sorteo de opciones según probabilidades | 1 |
-| `src/client/` | Phaser: una escena de juego (capas) y una de interfaz. Solo dibuja, anima y lee input | 0→4 |
+| `src/shared/rng.ts` | RNG con semilla (mulberry32) y sorteo de opciones según probabilidades | 1 |
+| `src/client/game-scene.ts` | Capas, input del mapa, animación de eventos. Comandos que usa la interfaz | 0→4 |
+| `src/client/ui-scene.ts` | Barra superior, panel, registro, fin de partida. Se redibuja con cada cambio | 0→4 |
+| `src/client/api.ts` | `requestEnemyTurn(state)` | 1→2 |
 | `server/index.ts` | Hono: `/api/health`, `/api/enemy-turn` (fase 1), `/api/spy` (fase 2) | 0→2 |
+| `server/turn.ts` | Un turno enemigo: valida contra el nivel, analiza, arma preguntas, proveedor, sorteo | 1→2 |
 | `server/jev-state.ts` | `TurnAnalysis` + doctrina → estado en inglés + preguntas | 1 |
-| `server/doctrines.ts` | El texto de las tres doctrinas | 2 |
+| `server/doctrines.ts` | El texto de las tres doctrinas | 1 |
+| `tests/rules.test.ts` | Reglas, análisis, sorteo, contrato zod y 20 turnos con el mock (`npm test`) | 1 |
 | `server/providers/` | `DecisionProvider`: `mock`, `jev`, `replay` (`JEV_MODE`) | 0→2 |
 | `server/limiter.ts`, `budget.ts`, `decision-log.ts` | Intervalo mínimo, tope diario, JSONL | 2 |
 | `scripts/` | `jev-ping.ts`, `rate-probe.ts`, `bench.ts` | 2 |

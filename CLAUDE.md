@@ -72,13 +72,18 @@ Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 
    llamada completa, repetición del turno enemigo.
 4. Pulido: estilo noir, luz 2D desde las linternas, partículas, tweens, selector de comandante.
 
-Estado: fase 0 hecha (estructura, tipos, documentos). Siguiente: fase 1.
+Estado: fases 0 y 1 hechas (reglas con pruebas, juego jugable con el mock). Siguiente: fase 2.
 
 ## Comandos
 
 - `npm run dev`: Vite (5173) + servidor (8787); Vite redirige `/api`. Requiere `.env` (ver `.env.example`).
 - `npm run typecheck`: tres proyectos: shared (puro), client (DOM), server/scripts (Node).
 - `npm run jev:ping`: lista los modelos y hace una llamada real a Jev, sin reintentos (~$0.00002).
+- `npm test`: pruebas de reglas y del turno del servidor (`node:test` vía tsx, sin dependencias extra).
+- Partida: `http://localhost:5173/?commander=impulsivo&seed=123` (misma semilla = misma partida).
+  Teclas: 1·2·3 ladrón, Esc cancela, Enter termina el turno. Depurar: `__game.scene.getScene("game").state`.
+- Probar en Chrome: si la ventana queda tapada, Chrome la marca `hidden`, `requestAnimationFrame` se detiene
+  y las animaciones de Phaser no terminan. Traerla al frente o probar con Chrome headless.
 
 ## Git
 
