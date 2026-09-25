@@ -66,7 +66,7 @@ Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 
 - Todo cambio en el estado para Jev, las preguntas o las doctrinas se mide con `npm run bench -- --real --save
   vN` y se compara con la versión anterior (`logs/bench-v*.json`) antes de darlo por bueno. Los pares del banco
   cambian solo el comandante; agregar situaciones al final, no cambiar las existentes.
-  Historial: v1 9/11; v2 11/11 (rencoroso atado a `shared.radio_trust`, `shared.sightings`). Mock: 7/11.
+  Historial: v1 9/11; v2 11/11 (rencoroso atado a `shared.radio_trust`, `shared.sightings`). Mock: 8/11.
 - Reutilizar de `../BomberJev` lo que sirva (proveedores, budget, decision-log, rate-probe) en vez de reescribirlo.
 - Arte y personajes originales.
 
@@ -78,7 +78,7 @@ Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 
    llamada completa, repetición del turno enemigo.
 4. Pulido: estilo noir, luz 2D desde las linternas, partículas, tweens, selector de comandante.
 
-Estado: fases 0 a 3 hechas (Jev visible: etiquetas, franja de barras, infiltrada, confianza, visor, repetición). Siguiente: fase 4.
+Estado: las cuatro fases hechas. Fase 4: estilo noir, luz de linternas, partículas, tweens y selector de comandante.
 
 ## Comandos
 
@@ -88,7 +88,8 @@ Estado: fases 0 a 3 hechas (Jev visible: etiquetas, franja de barras, infiltrada
 - `npm test`: pruebas de reglas, del turno del servidor y de 429 (`node:test` vía tsx, sin tocar el gateway).
 - `npm run bench` (mock) / `npm run bench -- --real [--save vN]` (~11 llamadas, ~$0.0007).
 - Modo: `JEV_MODE=mock|real|replay` en `.env` (o `JEV_MODE=real npm run dev` para una sola vez).
-- Partida: `http://localhost:5173/?commander=impulsivo&seed=123` (misma semilla = misma partida).
+- Partida: `http://localhost:5173/` abre el selector de comandante; `?commander=impulsivo&seed=123` lo saltea
+  (misma semilla y mismas jugadas = misma partida).
   Teclas: 1·2·3 ladrón, Esc cancela, Enter termina el turno, I infiltrada, R repite el turno enemigo, V visor
   de la llamada. Depurar: `__game.scene.getScene("game").state`.
 - Probar en Chrome: si la ventana queda tapada, Chrome la marca `hidden`, `requestAnimationFrame` se detiene

@@ -1,5 +1,12 @@
 // Textos en español que comparten las dos escenas.
-import type { GuardOption, LossReason, RadioTrust } from "../shared/types";
+import type { CommanderId, GuardOption, LossReason, RadioTrust } from "../shared/types";
+
+/** Para el selector. La doctrina real (en inglés, la que lee Jev) vive solo en server/doctrines.ts. */
+export const COMMANDER_INFO: Record<CommanderId, { name: string; blurb: string }> = {
+  cauteloso: { name: "Cauteloso", blurb: "Protege la bóveda. Casi no se deja distraer por ruidos ni por la radio." },
+  impulsivo: { name: "Impulsivo", blurb: "Acude a cualquier ruido o reporte. Fácil de distraer, rápido para reaccionar." },
+  rencoroso: { name: "Rencoroso", blurb: "Le cree a la radio hasta que lo engaña una vez. Después, caza sin descanso." },
+};
 
 export const OPTION_LABEL: Record<GuardOption, string> = {
   patrol: "patrullar",

@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { THIEVES } from "../shared/config";
+import { THIEVES, VISION_RANGE } from "../shared/config";
 import { resolveEnemyTurn } from "../shared/enemy-turn";
 import { key, LEVELS, same, tileAt, zoneAt, type Level } from "../shared/level";
 import { activateSpy, canUseSpy, coinTargets, moveThief, reachable, sendRadio, thiefAct } from "../shared/player-turn";
@@ -23,22 +23,29 @@ const SPY_DEBOUNCE_MS = 700;
 
 export type Mode = "move" | "coin" | "radio_movement" | "radio_all_clear";
 
+// Paleta noir: azules casi negros, luz cálida de linterna, pocos colores saturados.
 const COLOR = {
-  floor: 0x161922,
-  grid: 0x232735,
-  wall: 0x3a3f52,
-  door: 0x7a5a3a,
-  pedestal: 0x5a5f73,
-  vault: 0xc8a24a,
-  exit: 0x2f6b3a,
-  cone: 0xe8d27a,
+  floor: 0x12141c,
+  grid: 0x1a1d28,
+  wall: 0x262a36,
+  wallEdge: 0x454b60,
+  door: 0x5a4630,
+  pedestal: 0x2f3445,
+  vitrine: 0x4a5068,
+  vault: 0xb8913e,
+  exit: 0x1f4a2c,
+  cone: 0xf3e2a0,
   reach: 0x5b8cff,
-  coin: 0xff9f6b,
+  coin: 0xffc86b,
   guard: 0xe8d27a,
-  thief: { zorro: 0xff8a50, llave: 0x7fb8ff, eco: 0x9be38a } satisfies Record<ThiefId, number>,
+  thief: { zorro: 0xe8845a, llave: 0x7fa8e0, eco: 0x8fcf86 } satisfies Record<ThiefId, number>,
 };
+/** Oscuridad sobre el museo; las linternas la "borran" en las casillas que ve cada guardia. */
+const DARKNESS = 0.52;
 const ROTATION: Record<Facing, number> = { east: 0, south: Math.PI / 2, west: Math.PI, north: -Math.PI / 2 };
 const px = (p: Vec) => ({ x: MAP.x + p.x * TILE + TILE / 2, y: MAP.y + p.y * TILE + TILE / 2 });
+/** El ángulo equivalente a `target` más cercano a `current`: así el guardia gira por el lado corto. */
+const nearestAngle = (current: number, target: number) => current + Phaser.Math.Angle.Wrap(target - current);
 
 export class GameScene extends Phaser.Scene {
   readonly level: Level = LEVELS.museo!;
@@ -65,6 +72,11 @@ export class GameScene extends Phaser.Scene {
   private mapGfx!: Phaser.GameObjects.Graphics;
   private hintGfx!: Phaser.GameObjects.Graphics;
   private coneGfx!: Phaser.GameObjects.Graphics;
+  private darkness!: Phaser.GameObjects.RenderTexture;
+  private lightBrush!: Phaser.GameObjects.Image;
+  private vaultDoor!: Phaser.GameObjects.Rectangle;
+  private coinSparks!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private vaultSparks!: Phaser.GameObjects.Particles.ParticleEmitter;
   private effects!: Phaser.GameObjects.Layer;
   private sprites = new Map<string, Phaser.GameObjects.Container>();
 
@@ -77,12 +89,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Capas de abajo hacia arriba (ARCHITECTURE.md, "Eventos → capas").
-    const layers = { map: this.add.layer(), cones: this.add.layer(), entities: this.add.layer(), effects: this.add.layer(), jev: this.add.layer() };
+    this.makeTextures();
+    // Capas de abajo hacia arriba (ARCHITECTURE.md, "Eventos → capas"). La luz va entre entidades y efectos:
+    // oscurece el museo y los personajes, pero no los efectos ni las etiquetas de Jev.
+    const layers = {
+      map: this.add.layer(),
+      cones: this.add.layer(),
+      entities: this.add.layer(),
+      light: this.add.layer(),
+      effects: this.add.layer(),
+      jev: this.add.layer(),
+    };
     this.effects = layers.effects;
     this.mapGfx = this.add.graphics();
     this.hintGfx = this.add.graphics();
-    layers.map.add([this.mapGfx, this.hintGfx]);
+    const door = px(this.level.vaultDoor);
+    this.vaultDoor = this.add.rectangle(door.x, door.y, TILE - 4, TILE - 4, COLOR.vault);
+    layers.map.add([this.mapGfx, this.vaultDoor]);
+    layers.effects.add(this.hintGfx); // las casillas de ayuda van sobre la oscuridad: tienen que leerse siempre
     for (const [id, z] of Object.entries(this.level.zones)) {
       // La etiqueta va en la primera casilla de suelo de la zona (en orden de lectura), nunca en un muro o puerta.
       const first = this.level.zoneIds.flatMap((row, y) => row.flatMap((zid, x) => (zid === id && tileAt(this.level, { x, y }) === "floor" ? [{ x, y }] : [])))[0]!;
@@ -114,12 +138,32 @@ export class GameScene extends Phaser.Scene {
 
     // Info de Jev: una etiqueta por guardia con la opción elegida y su probabilidad. Va en su propia capa
     // (encima de todo) y se mueve junto con el guardia.
-    for (const g of this.state.guards) {
-      const label = this.add.text(0, -TILE * 0.5, "", { ...TEXT, fontSize: "11px", fontStyle: "bold", backgroundColor: "#141221" }).setOrigin(0.5, 1).setPadding(3, 1);
+    for (const [i, g] of this.state.guards.entries()) {
+      // Escalonadas por guardia: si se amontonan (p. ej. todos en la bóveda), no se tapan entre sí.
+      const label = this.add.text(0, -TILE * 0.5 - i * 13, "", { ...TEXT, fontSize: "11px", fontStyle: "bold", backgroundColor: "#141221" }).setOrigin(0.5, 1).setPadding(3, 1);
       const c = this.add.container(0, 0, [label]).setVisible(false);
       this.jevLabels.set(g.id, c);
       layers.jev.add(c);
     }
+
+    // Iluminación 2D: una capa de oscuridad que las linternas borran (ver drawVision) y una viñeta.
+    const size = { w: this.level.width * TILE, h: this.level.height * TILE };
+    this.darkness = this.add.renderTexture(MAP.x, MAP.y, size.w, size.h).setOrigin(0);
+    this.lightBrush = this.make.image({ key: "light", add: false });
+    layers.light.add([this.darkness, this.add.image(MAP.x, MAP.y, "vignette").setOrigin(0).setDisplaySize(size.w, size.h)]);
+
+    // Partículas: chispas doradas para la moneda, chispas de bronce para la cerradura de la bóveda.
+    const sparks = (tint: number[], speed: number) =>
+      this.add.particles(0, 0, "spark", { speed: { min: speed / 3, max: speed }, lifespan: 550, scale: { start: 0.9, end: 0 }, alpha: { start: 1, end: 0 }, tint, blendMode: "ADD", emitting: false });
+    this.coinSparks = sparks([0xffd27a, 0xffb040], 140);
+    this.vaultSparks = sparks([0xffe6a0, 0xb8913e, 0xffffff], 220);
+    layers.effects.add([this.coinSparks, this.vaultSparks]);
+
+    // El anillo del ladrón seleccionado late suave.
+    for (const t of Object.values(this.state.thieves)) {
+      this.tweens.add({ targets: this.sprites.get(t.id)!.getByName("ring"), alpha: 0.35, duration: 700, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
+    }
+    this.cameras.main.fadeIn(400, 0, 0, 0);
 
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => this.onTile({ x: Math.floor((p.x - MAP.x) / TILE), y: Math.floor((p.y - MAP.y) / TILE) }));
     const keys = this.input.keyboard;
@@ -134,6 +178,37 @@ export class GameScene extends Phaser.Scene {
 
     this.scene.launch("ui");
     this.refresh();
+  }
+
+  /** Texturas generadas por código: luz (degradado radial), viñeta y chispa. Sin archivos de arte. */
+  private makeTextures(): void {
+    const canvas = (key: string, w: number, h: number, paint: (ctx: CanvasRenderingContext2D) => void) => {
+      if (this.textures.exists(key)) return;
+      const tex = this.textures.createCanvas(key, w, h)!;
+      paint(tex.getContext());
+      tex.refresh();
+    };
+    canvas("light", 128, 128, (ctx) => {
+      const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(0.5, "rgba(255,255,255,0.6)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 128, 128);
+    });
+    canvas("vignette", 400, 280, (ctx) => {
+      const g = ctx.createRadialGradient(200, 140, 90, 200, 140, 250);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(0,0,0,0.55)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 400, 280);
+    });
+    canvas("spark", 8, 8, (ctx) => {
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(4, 4, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   // ---------------------------------------------------------------- comandos (los usa la interfaz)
@@ -316,7 +391,7 @@ export class GameScene extends Phaser.Scene {
   /** Redibuja todo a partir del estado y avisa a la interfaz. */
   private refresh(view: GameState = this.state): void {
     this.drawMap(view);
-    this.drawCones(view);
+    this.drawVision(view);
     this.drawHints();
     this.syncSprites(view);
     this.updateViewer();
@@ -330,21 +405,46 @@ export class GameScene extends Phaser.Scene {
         const t = tileAt(this.level, { x, y });
         const X = MAP.x + x * TILE;
         const Y = MAP.y + y * TILE;
-        g.fillStyle(t === "wall" ? COLOR.wall : t === "exit" ? COLOR.exit : COLOR.floor).fillRect(X, Y, TILE, TILE);
-        if (t !== "wall") g.lineStyle(1, COLOR.grid).strokeRect(X, Y, TILE, TILE);
-        if (t === "pedestal") g.fillStyle(COLOR.pedestal).fillRect(X + 6, Y + 6, TILE - 12, TILE - 12);
-        if (t === "door") g.fillStyle(COLOR.door).fillRect(X + TILE / 2 - 3, Y + 4, 6, TILE - 8);
-        if (t === "vault_door") {
-          if (view.vault.open) g.lineStyle(2, COLOR.vault).strokeRect(X + 3, Y + 3, TILE - 6, TILE - 6);
-          else g.fillStyle(COLOR.vault).fillRect(X + 2, Y + 2, TILE - 4, TILE - 4);
+        if (t === "wall") {
+          g.fillStyle(COLOR.wall).fillRect(X, Y, TILE, TILE);
+          if (tileAt(this.level, { x, y: y + 1 }) !== "wall") g.fillStyle(COLOR.wallEdge).fillRect(X, Y + TILE - 4, TILE, 4); // canto iluminado
+          continue;
         }
+        g.fillStyle(t === "exit" ? COLOR.exit : COLOR.floor).fillRect(X, Y, TILE, TILE);
+        g.lineStyle(1, COLOR.grid).strokeRect(X, Y, TILE, TILE);
+        if (t === "pedestal") {
+          // Una vitrina: base oscura y el objeto expuesto.
+          g.fillStyle(COLOR.pedestal).fillRect(X + 5, Y + 5, TILE - 10, TILE - 10);
+          g.fillStyle(COLOR.vitrine).fillRect(X + 13, Y + 13, TILE - 26, TILE - 26);
+        }
+        if (t === "door") g.fillStyle(COLOR.door).fillRect(X + TILE / 2 - 3, Y + 4, 6, TILE - 8);
+        if (t === "vault_door" && view.vault.open) g.lineStyle(2, COLOR.vault).strokeRect(X + 3, Y + 3, TILE - 6, TILE - 6);
       }
     }
   }
 
-  private drawCones(view: GameState): void {
-    const g = this.coneGfx.clear().fillStyle(COLOR.cone, 0.16);
-    for (const guard of view.guards) for (const t of visibleTiles(this.level, view, guard)) g.fillRect(MAP.x + t.x * TILE, MAP.y + t.y * TILE, TILE, TILE);
+  /**
+   * Conos y luz. La luz de cada linterna son exactamente las casillas que ve el guardia (visibleTiles), así lo
+   * que se ve iluminado es lo que las reglas consideran visible. Los ladrones llevan un resplandor propio para
+   * que el jugador siempre vea a su equipo.
+   */
+  private drawVision(view: GameState): void {
+    const cones = this.coneGfx.clear().fillStyle(COLOR.cone, 0.07);
+    const rt = this.darkness.clear().fill(0x04050a, DARKNESS);
+    const light = (p: Vec, size: number, alpha: number) => {
+      this.lightBrush.setDisplaySize(size, size).setAlpha(alpha);
+      rt.erase(this.lightBrush, p.x * TILE + TILE / 2, p.y * TILE + TILE / 2);
+    };
+    for (const guard of view.guards) {
+      light(guard.pos, TILE * 2.2, 0.6);
+      for (const t of visibleTiles(this.level, view, guard)) {
+        cones.fillRect(MAP.x + t.x * TILE, MAP.y + t.y * TILE, TILE, TILE);
+        light(t, TILE * 2.4, 0.95 * (1 - Math.hypot(t.x - guard.pos.x, t.y - guard.pos.y) / (VISION_RANGE + 1.5)));
+      }
+    }
+    for (const t of Object.values(view.thieves)) if (!t.caught) light(t.pos, TILE * 2.6, 0.7);
+    light(this.level.exit, TILE * 2, 0.4);
+    if (view.diamond) light(view.diamond, TILE * 1.6, 0.45); // el diamante brilla en la bóveda oscura
   }
 
   /** Casillas válidas para lo que el jugador está haciendo: azules para moverse, naranjas para la moneda. */
@@ -362,6 +462,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncSprites(view: GameState): void {
+    this.vaultDoor.setVisible(!view.vault.open).setScale(1).setAlpha(1);
     const diamond = this.sprites.get("diamond")!;
     diamond.setVisible(view.diamond !== null);
     if (view.diamond) diamond.setPosition(px(view.diamond).x, px(view.diamond).y);
@@ -381,7 +482,10 @@ export class GameScene extends Phaser.Scene {
   private setLabel(guard: GuardId, d: GuardDecision | null): void {
     const c = this.jevLabels.get(guard)!;
     c.setVisible(d !== null);
-    if (d) (c.list[0] as Phaser.GameObjects.Text).setText(`${OPTION_LABEL[d.option]} ${pct(d.probability)}`).setColor(probColor(d.probability));
+    if (!d) return;
+    (c.list[0] as Phaser.GameObjects.Text).setText(`${OPTION_LABEL[d.option]} ${pct(d.probability)}`).setColor(probColor(d.probability));
+    c.setScale(0.5);
+    this.tweens.add({ targets: c, scale: 1, duration: 220, ease: "Back.easeOut" });
   }
 
   // ---------------------------------------------------------------- animación de eventos
@@ -394,7 +498,7 @@ export class GameScene extends Phaser.Scene {
     const view = clone(from);
     if (from !== this.state) {
       this.drawMap(view);
-      this.drawCones(view);
+      this.drawVision(view);
       this.syncSprites(view);
       for (const g of view.guards) this.setLabel(g.id, null);
     }
@@ -405,18 +509,21 @@ export class GameScene extends Phaser.Scene {
           for (const p of e.path) {
             view.thieves[e.thief].pos = p;
             await this.tweenTo([this.sprites.get(e.thief)!], p, 110);
+            this.drawVision(view); // su resplandor lo acompaña
           }
           break;
         case "guard_moved": {
           const g = view.guards.find((x) => x.id === e.guard)!;
+          const body = this.sprites.get(g.id)!.getByName("body") as Phaser.GameObjects.Container;
           g.facing = e.facing;
-          (this.sprites.get(g.id)!.getByName("body") as Phaser.GameObjects.Container).setRotation(ROTATION[e.facing]);
+          this.tweens.add({ targets: body, rotation: nearestAngle(body.rotation, ROTATION[e.facing]), duration: 120 });
           for (const p of e.path) {
             g.pos = p;
             await this.tweenTo([this.sprites.get(g.id)!, this.jevLabels.get(g.id)!], p, 140);
+            this.drawVision(view); // la linterna barre mientras camina
           }
           if (!e.path.length) await this.wait(150);
-          this.drawCones(view);
+          this.drawVision(view);
           break;
         }
         case "thief_seen":
@@ -424,14 +531,20 @@ export class GameScene extends Phaser.Scene {
           break;
         case "alarm_raised":
           this.cameras.main.flash(250, 140, 20, 20);
+          this.cameras.main.shake(200, 0.004);
           await this.wait(250);
           break;
-        case "thief_caught":
+        case "thief_caught": {
           view.thieves[e.thief].caught = true;
-          this.syncSprites(view);
+          const sprite = this.sprites.get(e.thief)!;
+          this.tweens.add({ targets: sprite, scale: 0.6, alpha: 0.2, duration: 300, onComplete: () => sprite.setScale(1) });
           await this.float(view.thieves[e.thief].pos, "¡atrapado!", "#ff5a5a");
+          this.drawVision(view);
           break;
+        }
         case "noise_made":
+          await this.throwCoin(view.thieves.eco.pos, e.at);
+          this.coinSparks.explode(16, px(e.at).x, px(e.at).y);
           await this.ring(e.at);
           break;
         case "radio_sent":
@@ -440,20 +553,34 @@ export class GameScene extends Phaser.Scene {
         case "deception_discovered":
           await this.float(guardPos(e.guard), "¡la radio mintió!", "#c9a3ff");
           break;
-        case "vault_progress":
+        case "vault_progress": {
+          const door = px(this.level.vaultDoor);
+          this.vaultSparks.explode(14, door.x, door.y + TILE / 2);
+          this.cameras.main.shake(120, 0.003);
           await this.float(this.level.vaultDoor, `forzando ${e.progress}/2`, "#c8a24a");
           break;
-        case "vault_opened":
+        }
+        case "vault_opened": {
+          const door = px(this.level.vaultDoor);
+          this.vaultSparks.explode(40, door.x, door.y);
+          // La puerta se desliza hacia un costado antes de que el mapa la dibuje abierta.
+          await new Promise<void>((resolve) => this.tweens.add({ targets: this.vaultDoor, scaleX: 0.1, x: door.x + TILE * 0.45, duration: 450, ease: "Cubic.easeIn", onComplete: () => resolve() }));
+          this.vaultDoor.setPosition(door.x, door.y);
           view.vault.open = true;
           this.drawMap(view);
-          this.drawCones(view);
+          this.drawVision(view);
+          this.syncSprites(view);
           await this.float(this.level.vaultDoor, "¡abierta!", "#c8a24a");
           break;
-        case "diamond_taken":
+        }
+        case "diamond_taken": {
+          const thief = view.thieves[e.thief];
+          await this.tweenTo([this.sprites.get("diamond")!], thief.pos, 250);
           view.diamond = null;
-          view.thieves[e.thief].hasDiamond = true;
+          thief.hasDiamond = true;
           this.syncSprites(view);
           break;
+        }
         case "guard_decided":
           this.setLabel(e.decision.guard, e.decision);
           await this.wait(250);
@@ -466,7 +593,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tweenTo(targets: Phaser.GameObjects.Container[], p: Vec, duration: number): Promise<void> {
-    return new Promise((resolve) => this.tweens.add({ targets, ...px(p), duration, onComplete: () => resolve() }));
+    return new Promise((resolve) => this.tweens.add({ targets, ...px(p), duration, ease: "Sine.easeInOut", onComplete: () => resolve() }));
+  }
+
+  /** La moneda vuela en arco desde Eco hasta donde cae. */
+  private throwCoin(from: Vec, to: Vec): Promise<void> {
+    const a = px(from);
+    const b = px(to);
+    const coin = this.add.circle(a.x, a.y, 5, COLOR.coin);
+    this.effects.add(coin);
+    return new Promise((resolve) =>
+      this.tweens.addCounter({
+        from: 0,
+        to: 1,
+        duration: 380,
+        onUpdate: (tw) => {
+          const k = tw.getValue() ?? 0;
+          coin.setPosition(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k - Math.sin(Math.PI * k) * TILE * 1.5);
+        },
+        onComplete: () => (coin.destroy(), resolve()),
+      }),
+    );
   }
 
   private wait(ms: number): Promise<void> {

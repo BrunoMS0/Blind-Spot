@@ -62,7 +62,8 @@ export class UIScene extends Phaser.Scene {
 
   private drawTopBar(): void {
     const s = this.board.state;
-    this.text(MAP.x, 18, `${GAME_NAME.toUpperCase()}   Turno ${s.turn}   Alarma`, { fontSize: "14px", color: "#e8e4d8" });
+    this.text(MAP.x, 12, GAME_NAME, { fontFamily: "Georgia, serif", fontSize: "24px", fontStyle: "italic", color: "#e8e4d8" });
+    this.text(MAP.x + 150, 18, `Turno ${s.turn}   Alarma`, { fontSize: "14px", color: "#e8e4d8" });
     const g = this.keep(this.add.graphics());
     for (let i = 0; i < ALARM_TO_LOSE; i++) {
       g.lineStyle(2, 0xd05a5a).strokeRect(MAP.x + 300 + i * 22, 18, 16, 16);
@@ -145,7 +146,7 @@ export class UIScene extends Phaser.Scene {
 
     const spyActive = b.state.spy.activeThisTurn;
     if (!j || (spyActive && j.kind !== "spy")) {
-      const msg = spyActive ? `INFILTRADA · ${b.spyStatus === "error" ? `sin señal: ${b.spyError}` : "consultando…"}` : "Jev todavía no decidió. Termina el turno (Enter) o activa la infiltrada (I) para ver sus probabilidades.";
+      const msg = spyActive ? `INFILTRADA · ${b.spyStatus === "error" ? `sin señal: ${b.spyError}` : "consultando…"}` : "Jev todavía no decidió: termina el turno (Enter) o activa la infiltrada (I).";
       this.text(STRIP.x + 8, top, msg, { color: "#7d8398" });
       return;
     }
@@ -186,7 +187,7 @@ export class UIScene extends Phaser.Scene {
     const won = outcome.status === "won";
     this.keep(this.add.rectangle(MAP.x + 400, MAP.y + 280, 440, 150, 0x0d0e14, 0.95).setStrokeStyle(2, won ? 0x7fd48a : 0xd05a5a));
     this.text(MAP.x + 400, MAP.y + 250, outcome.status === "won" ? "¡Escaparon con el diamante!" : `Perdiste: ${LOSS[outcome.reason]}`, { fontSize: "18px", color: won ? "#7fd48a" : "#ff8080" }).setOrigin(0.5);
-    this.button(MAP.x + 400, MAP.y + 305, "Nueva partida", () => location.assign(`?commander=${s.commander}`)).setOrigin(0.5);
+    this.button(MAP.x + 400, MAP.y + 305, "Nueva partida", () => location.assign(location.pathname)).setOrigin(0.5); // al selector
   }
 
   private hint(): string {

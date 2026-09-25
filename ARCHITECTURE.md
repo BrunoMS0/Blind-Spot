@@ -62,7 +62,8 @@ un guardia no use la información de otro.
 | `src/shared/rng.ts` | RNG con semilla (mulberry32) y sorteo de opciones según probabilidades | 1 |
 | `src/client/game-scene.ts` | Capas (con la de Jev), input, animación de eventos, infiltrada, repetición, visor | 0→4 |
 | `src/client/ui-scene.ts` | Barra superior, panel, franja de Jev, registro, fin de partida. Se redibuja con cada cambio | 0→4 |
-| `src/client/texts.ts` | Textos en español que comparten las dos escenas | 3 |
+| `src/client/texts.ts` | Textos en español que comparten las escenas | 3 |
+| `src/client/menu-scene.ts` | Selector de comandante antes de empezar | 4 |
 | `src/client/api.ts` | `requestTurn(endpoint, state, fallback)`; `TurnFailed` con `retryable` | 1→2 |
 | `server/index.ts` | Hono: `/api/health`, `/api/enemy-turn`, `/api/spy`. Escribe el registro y suma el gasto | 0→2 |
 | `server/turn.ts` | Un pedido: valida contra el nivel, analiza, arma preguntas, elige proveedor, sortea. Devuelve respuesta y registro | 1→2 |
@@ -159,10 +160,25 @@ idénticos). Una situación sin grabación la decide el mock y lo avisa en `meta
 | `thief_caught` | entidades: el ladrón sale del tablero |
 | `noise_made` | efectos: onda en la casilla; "?" sobre los guardias que la oyen |
 | `radio_sent`, `deception_discovered` | interfaz: reporte activo e indicador de confianza en la radio |
-| `vault_progress`, `vault_opened` | mapa: la puerta de la bóveda; efectos: chispas (fase 4) |
+| `vault_progress`, `vault_opened` | efectos: chispas y sacudida; mapa: la puerta se desliza y queda abierta |
 | `diamond_taken` | entidades: el diamante pasa al ladrón |
 | `guard_decided` | info de Jev: etiqueta sobre el guardia con la opción y su probabilidad |
 | `turn_ended`, `game_over` | interfaz: turno, pantalla final |
+
+## Estilo noir e iluminación (fase 4)
+
+- **Luz 2D**: Light2D de Phaser solo afecta a sprites e imágenes con textura, y aquí todo se dibuja con
+  Graphics y formas; además la luz debe respetar la visión de las reglas. Por eso la luz es una capa de oscuridad
+  (`RenderTexture`, capa `light` entre entidades y efectos) que se borra con un degradado radial. Cada
+  linterna ilumina exactamente las casillas de `visibleTiles()`, más tenue con la distancia: lo iluminado es
+  lo que las reglas consideran visible. Los ladrones, la salida y el diamante tienen un resplandor propio.
+  Se redibuja en cada paso de las animaciones (`drawVision`).
+- Las casillas de ayuda, los efectos y las etiquetas de Jev van por encima de la oscuridad.
+- **Partículas** generadas por código (sin archivos de arte): chispas doradas donde cae la moneda (que vuela en
+  arco desde Eco) y chispas de bronce en la cerradura de la bóveda; al abrirse, la puerta se desliza.
+- **Tweens**: pasos con aceleración suave, giros por el lado corto, etiquetas que aparecen con rebote, captura
+  que encoge al ladrón, el diamante que vuela hasta quien lo toma, el anillo del seleccionado que late.
+- **Selector de comandante** (`MenuScene`) al entrar sin parámetros; `?commander=…&seed=…` lo saltea.
 
 ## Jev visible (fase 3)
 
