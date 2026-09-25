@@ -5,7 +5,7 @@ import { analyzeTurn } from "../src/shared/analysis";
 import { GameStateSchema, TurnRequestSchema } from "../src/shared/api";
 import { resolveEnemyTurn } from "../src/shared/enemy-turn";
 import { LEVELS } from "../src/shared/level";
-import { availableActions, moveThief, sendRadio, thiefAct } from "../src/shared/player-turn";
+import { activateSpy, availableActions, moveThief, sendRadio, thiefAct } from "../src/shared/player-turn";
 import { mulberry32, rngFor, sample } from "../src/shared/rng";
 import { newGame } from "../src/shared/rules";
 import type { EnemyDecisions, GameState, GuardOption } from "../src/shared/types";
@@ -135,6 +135,14 @@ describe("radio", () => {
     s.thieves.zorro.pos = { x: 7, y: 8 };
     const r = moveThief(level, s, "zorro", { x: 7, y: 6 });
     assert.equal(r.state.radio.deceptions, 1);
+  });
+  test("la infiltrada: dos usos, uno por turno, se apaga al terminar el turno enemigo", () => {
+    const once = activateSpy(fresh()).state;
+    assert.deepEqual(once.spy, { usesLeft: 1, activeThisTurn: true });
+    assert.throws(() => activateSpy(once));
+    const next = resolveEnemyTurn(level, once, everyone("hold")).state;
+    assert.equal(next.spy.activeThisTurn, false);
+    assert.equal(activateSpy(next).state.spy.usesLeft, 0);
   });
   test("una por turno y tres en total", () => {
     const s = sendRadio(level, fresh(), "movement", "vault").state;

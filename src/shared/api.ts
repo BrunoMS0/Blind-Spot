@@ -75,6 +75,8 @@ export interface TurnResponse {
     /** Aviso para el jugador, p. ej. tope diario alcanzado o replay sin grabación para esta situación. */
     note?: string;
   };
+  /** La llamada completa, tal como la vio Jev, para el visor. El cliente solo la muestra. */
+  call: { state: unknown; questions: unknown; answers: unknown };
 }
 
 /** Jev no respondió tras ~30 s de reintentos: el cliente ofrece reintentar o usar el respaldo. */

@@ -87,6 +87,13 @@ describe("servidor", () => {
     assert.equal(record.mode, "mock");
     assert.equal(record.costUsd, 0);
   });
+  test("raise_alarm cuenta solo desde 50 %: sin evidencia no, con un avistamiento sí (mock: 0.03 / 0.6)", async () => {
+    const quiet = newGame(level, "cauteloso", 3);
+    assert.equal((await decideTurn("enemy-turn", { state: quiet, fallback: false })).response.raiseAlarm.raised, false);
+    const seen = newGame(level, "cauteloso", 3);
+    seen.guards[1]!.lastSighting = { thief: "zorro", pos: { x: 7, y: 9 }, turn: 1 };
+    assert.equal((await decideTurn("enemy-turn", { state: seen, fallback: false })).response.raiseAlarm.raised, true);
+  });
   test("la infiltrada solo responde si está activa este turno", async () => {
     const s = newGame(level, "cauteloso", 3);
     await assert.rejects(decideTurn("spy", { state: s, fallback: false }), BadRequest);

@@ -78,7 +78,7 @@ Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 
    llamada completa, repetición del turno enemigo.
 4. Pulido: estilo noir, luz 2D desde las linternas, partículas, tweens, selector de comandante.
 
-Estado: fases 0, 1 y 2 hechas (Jev real con 429, limitador, caché, registro, replay y banco). Siguiente: fase 3.
+Estado: fases 0 a 3 hechas (Jev visible: etiquetas, franja de barras, infiltrada, confianza, visor, repetición). Siguiente: fase 4.
 
 ## Comandos
 
@@ -89,7 +89,8 @@ Estado: fases 0, 1 y 2 hechas (Jev real con 429, limitador, caché, registro, re
 - `npm run bench` (mock) / `npm run bench -- --real [--save vN]` (~11 llamadas, ~$0.0007).
 - Modo: `JEV_MODE=mock|real|replay` en `.env` (o `JEV_MODE=real npm run dev` para una sola vez).
 - Partida: `http://localhost:5173/?commander=impulsivo&seed=123` (misma semilla = misma partida).
-  Teclas: 1·2·3 ladrón, Esc cancela, Enter termina el turno. Depurar: `__game.scene.getScene("game").state`.
+  Teclas: 1·2·3 ladrón, Esc cancela, Enter termina el turno, I infiltrada, R repite el turno enemigo, V visor
+  de la llamada. Depurar: `__game.scene.getScene("game").state`.
 - Probar en Chrome: si la ventana queda tapada, Chrome la marca `hidden`, `requestAnimationFrame` se detiene
   y las animaciones de Phaser no terminan. Traerla al frente o probar con Chrome headless.
 

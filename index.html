@@ -6,10 +6,17 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0e14; }
       #game { width: 100%; height: 100%; }
+      /* Visor de la llamada completa a Jev (tecla V). Texto largo: mejor HTML que Phaser. */
+      #call-viewer {
+        position: fixed; top: 0; right: 0; width: min(560px, 100vw); height: 100vh; margin: 0; padding: 16px;
+        box-sizing: border-box; overflow: auto; white-space: pre-wrap; background: rgba(13, 14, 20, 0.96);
+        color: #d8d4c8; font: 12px/1.45 monospace; border-left: 1px solid #3a3f52;
+      }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <pre id="call-viewer" hidden></pre>
     <script type="module" src="/src/client/main.ts"></script>
   </body>
 </html>

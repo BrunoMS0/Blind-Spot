@@ -48,7 +48,7 @@ export const mockProvider: DecisionProvider = {
       };
     }
     const someoneSawAThief = analysis.guards.some((g) => g.options.chase);
-    answers.raise_alarm = { type: "noul", noul: someoneSawAThief ? 0.3 : 0.03 };
+    answers.raise_alarm = { type: "noul", noul: someoneSawAThief ? 0.6 : 0.03 };
     return { answers: answers as TurnAnswers, model: null, inputTokens: 0 };
   },
 };

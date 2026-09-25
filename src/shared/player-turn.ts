@@ -96,6 +96,19 @@ export function thiefAct(level: Level, state: GameState, id: ThiefId, action: Th
   return { state: s, events };
 }
 
+/** La infiltrada: 2 usos en la partida; dura el turno en que se activa. */
+export function canUseSpy(s: GameState): boolean {
+  return playing(s) && s.spy.usesLeft > 0 && !s.spy.activeThisTurn;
+}
+
+export function activateSpy(state: GameState): Result {
+  if (!canUseSpy(state)) throw new Error("illegal: the spy is not available");
+  const s = clone(state);
+  s.spy.usesLeft--;
+  s.spy.activeThisTurn = true;
+  return { state: s, events: [] };
+}
+
 export function canUseRadio(s: GameState): boolean {
   return playing(s) && s.radio.usesLeft > 0 && !s.radio.usedThisTurn;
 }

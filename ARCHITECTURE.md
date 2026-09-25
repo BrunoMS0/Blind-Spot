@@ -60,8 +60,9 @@ un guardia no use la información de otro.
 | `src/shared/analysis.ts` | `analyzeTurn()` → `TurnAnalysis`: opciones y hechos de cada guardia | 1 |
 | `src/shared/enemy-turn.ts` | `resolveEnemyTurn(level, state, decisions)` → `{ state, events }` | 1 |
 | `src/shared/rng.ts` | RNG con semilla (mulberry32) y sorteo de opciones según probabilidades | 1 |
-| `src/client/game-scene.ts` | Capas, input del mapa, animación de eventos. Comandos que usa la interfaz | 0→4 |
-| `src/client/ui-scene.ts` | Barra superior, panel, registro, fin de partida. Se redibuja con cada cambio | 0→4 |
+| `src/client/game-scene.ts` | Capas (con la de Jev), input, animación de eventos, infiltrada, repetición, visor | 0→4 |
+| `src/client/ui-scene.ts` | Barra superior, panel, franja de Jev, registro, fin de partida. Se redibuja con cada cambio | 0→4 |
+| `src/client/texts.ts` | Textos en español que comparten las dos escenas | 3 |
 | `src/client/api.ts` | `requestTurn(endpoint, state, fallback)`; `TurnFailed` con `retryable` | 1→2 |
 | `server/index.ts` | Hono: `/api/health`, `/api/enemy-turn`, `/api/spy`. Escribe el registro y suma el gasto | 0→2 |
 | `server/turn.ts` | Un pedido: valida contra el nivel, analiza, arma preguntas, elige proveedor, sortea. Devuelve respuesta y registro | 1→2 |
@@ -99,7 +100,7 @@ toca `window` o `process`. Las reglas nunca dibujan: devuelven estado nuevo y ev
    En modo real: **caché** por (estado, preguntas) → si la infiltrada ya preguntó exactamente esto, no se
    llama; si no, **limitador** (de a una llamada, `JEV_MIN_INTERVAL_MS` entre inicios) → `systemOne`.
 5. **Sorteo** (`SAMPLING=sample|argmax`): la opción de cada guardia se sortea con las probabilidades de Jev,
-   con un RNG sembrado por semilla + turno + guardia. `raise_alarm` se sortea como sí/no con su probabilidad.
+   con un RNG sembrado por semilla + turno + guardia. `raise_alarm` no se sortea: cuenta si p ≥ 0.5.
    Como la semilla es la misma, la infiltrada y el turno enemigo sortean igual con la misma respuesta.
 6. Respuesta `TurnResponse` (probabilidades, opción sorteada y `raise_alarm` por guardia; `meta` con modo,
    respaldo, caché, latencia y avisos) y una línea en `logs/decisions-YYYY-MM-DD.jsonl` (`DecisionRecord`).
@@ -128,8 +129,9 @@ idénticos). Una situación sin grabación la decide el mock y lo avisa en `meta
 - **Alarma:** un ladrón visto sube la alarma 1, **como mucho una vez por ladrón y por fase** (fases: turno
   del jugador y turno enemigo), aunque lo vean varios guardias o durante varios pasos. El guardia recuerda
   dónde lo vio (`lastSighting`). Con alarma 3 se pierde.
-- **`raise_alarm`:** se sortea. Un "sí" sube la alarma 1, pero **nunca de 2 a 3** (`RAISE_ALARM_CAP`): solo
-  ser visto hace perder.
+- **`raise_alarm`:** cuenta si Jev da p ≥ 0.5 (`RAISE_ALARM_THRESHOLD`; no se sortea porque su efecto se
+  acumula: sorteado, un 5-10 % por turno subía la alarma sin avistamientos). Sube la alarma 1, pero **nunca
+  de 2 a 3** (`RAISE_ALARM_CAP`): solo ser visto hace perder.
 - Captura: un guardia que termina su movimiento en una casilla ortogonalmente adyacente a un ladrón lo atrapa.
   Si atrapan a quien lleva el diamante, o a todo el equipo, se pierde.
 - Victoria: el ladrón con el diamante llega a la salida.
@@ -159,8 +161,25 @@ idénticos). Una situación sin grabación la decide el mock y lo avisa en `meta
 | `radio_sent`, `deception_discovered` | interfaz: reporte activo e indicador de confianza en la radio |
 | `vault_progress`, `vault_opened` | mapa: la puerta de la bóveda; efectos: chispas (fase 4) |
 | `diamond_taken` | entidades: el diamante pasa al ladrón |
-| `guard_decided` | info de Jev (fase 3): etiqueta con la opción y su probabilidad |
+| `guard_decided` | info de Jev: etiqueta sobre el guardia con la opción y su probabilidad |
 | `turn_ended`, `game_over` | interfaz: turno, pantalla final |
+
+## Jev visible (fase 3)
+
+- **Etiqueta** sobre cada guardia (capa de Jev, se mueve con él): opción sorteada y probabilidad. Naranja si
+  era poco probable (< 20 %): así se ve que el sorteo no toma siempre la más probable.
+- **Franja de Jev** bajo el mapa (`STRIP`, la dibuja UIScene): por guardia, las barras de todas las opciones
+  ofrecidas, la elegida marcada, y la probabilidad de `raise_alarm`. Muestra la decisión del último turno o,
+  con la infiltrada activa, la predicción en vivo (sin marcar el sorteo: con la misma semilla lo delataría).
+- **Infiltrada** (tecla I, 2 usos): consulta `/api/spy` al activarse y después de cada acción del jugador,
+  agrupando cambios seguidos (debounce de 700 ms; mientras espera, la franja dice "consultando…"). Si la foto
+  no cambió, no se consulta; si cambió pero lo que ve Jev no, el servidor responde de su caché. Si el turno
+  termina sin cambios, el turno enemigo sale de la caché (0 llamadas). Si termina durante el debounce, la
+  consulta pendiente se cancela y el turno enemigo hace la única llamada.
+- **Confianza en la radio** en el panel: alta / dudosa / creen que miente (de `radioTrust()`).
+- **Visor de la llamada** (tecla V): un `<pre>` HTML sobre el juego con el estado, las preguntas y las
+  respuestas de la última llamada (`TurnResponse.call`). Texto largo: mejor HTML que Phaser.
+- **Repetición** (tecla R): vuelve a animar los eventos del último turno enemigo desde el estado de antes.
 
 ## Determinismo y repetición
 

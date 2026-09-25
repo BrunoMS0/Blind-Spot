@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { COMMANDERS, GAME_NAME } from "../shared/config";
-import { GameScene } from "./game-scene";
+import { CANVAS, GameScene } from "./game-scene";
 import { UIScene } from "./ui-scene";
 
 document.title = GAME_NAME;
@@ -14,8 +14,8 @@ const seed = Number(params.get("seed")) || Math.floor(Math.random() * 2 ** 31);
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  width: 1152,
-  height: 632,
+  width: CANVAS.w,
+  height: CANVAS.h,
   backgroundColor: "#0d0e14",
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
 });

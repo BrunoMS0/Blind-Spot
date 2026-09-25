@@ -4,6 +4,7 @@
 import type { z } from "zod";
 import { analyzeTurn } from "../src/shared/analysis";
 import type { DecisionSource, TurnRequestSchema, TurnResponse } from "../src/shared/api";
+import { RAISE_ALARM_THRESHOLD } from "../src/shared/config";
 import { LEVELS } from "../src/shared/level";
 import { rngFor, sample } from "../src/shared/rng";
 import type { GameState, GuardOption } from "../src/shared/types";
@@ -73,13 +74,14 @@ export async function decideTurn(
     return { guard: g.guard, option, probability: answer.probabilities[option] ?? 0, probabilities: answer.probabilities };
   });
   const p = out.answers.raise_alarm.noul;
-  const raised = env.SAMPLING === "argmax" ? p >= 0.5 : rngFor(s.seed, s.turn, "raise_alarm")() < p;
+  const raised = p >= RAISE_ALARM_THRESHOLD; // umbral, no sorteo: ver config.ts
   const cached = out.cached ?? false;
 
   const response: TurnResponse = {
     guards,
     raiseAlarm: { probability: p, raised },
     meta: { mode: provider.mode, source, model: out.model, latencyMs, cached, ...(note && { note }) },
+    call: { state: jevState, questions, answers: out.answers },
   };
   const record: DecisionRecord = {
     ts: new Date().toISOString(),

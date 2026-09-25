@@ -27,6 +27,11 @@ export const VAULT_FORCE_ACTIONS = 2;
 export const ALARM_TO_LOSE = 3;
 /** raise_alarm sube la alarma como mucho hasta aquí: solo ser visto hace perder. */
 export const RAISE_ALARM_CAP = ALARM_TO_LOSE - 1;
+/**
+ * raise_alarm NO se sortea: cuenta solo si Jev da esta probabilidad o más. Su efecto se acumula turno a turno
+ * y sortear un 5-10 % cada turno subía la alarma sin que vieran a nadie. Los movimientos sí se sortean.
+ */
+export const RAISE_ALARM_THRESHOLD = 0.5;
 
 export const RADIO_USES = 3;
 export const SPY_USES = 2;

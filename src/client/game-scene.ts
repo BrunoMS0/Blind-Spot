@@ -2,18 +2,24 @@ import Phaser from "phaser";
 import { THIEVES } from "../shared/config";
 import { resolveEnemyTurn } from "../shared/enemy-turn";
 import { key, LEVELS, same, tileAt, zoneAt, type Level } from "../shared/level";
-import { coinTargets, moveThief, reachable, sendRadio, thiefAct } from "../shared/player-turn";
+import { activateSpy, canUseSpy, coinTargets, moveThief, reachable, sendRadio, thiefAct } from "../shared/player-turn";
 import { activeThieves, clone, newGame, type Result } from "../shared/rules";
-import type { CommanderId, Facing, GameEvent, GameState, ThiefAction, ThiefId, Vec } from "../shared/types";
+import type { CommanderId, Facing, GameEvent, GameState, GuardDecision, GuardId, ThiefAction, ThiefId, Vec } from "../shared/types";
 import { visibleTiles } from "../shared/vision";
 import type { TurnResponse } from "../shared/api";
 import { requestTurn, TurnFailed } from "./api";
+import { OPTION_LABEL, pct, probColor } from "./texts";
 
 // Phaser solo dibuja, anima y lee input. Toda regla sale de src/shared: esta escena aplica una acción,
 // anima los eventos que devuelve y se queda con el estado nuevo.
 export const TILE = 40;
 export const MAP = { x: 16, y: 56 };
+/** Franja de Jev bajo el mapa: las barras de probabilidad de cada guardia (la dibuja UIScene). */
+export const STRIP = { x: MAP.x, y: MAP.y + 14 * TILE + 12, w: 20 * TILE, h: 140 };
+export const CANVAS = { w: 1152, h: STRIP.y + STRIP.h + 12 };
 export const TEXT = { fontFamily: "monospace", fontSize: "12px", color: "#aab0c0" };
+/** La infiltrada espera a que el jugador deje de tocar cosas antes de consultar (cada consulta es una llamada). */
+const SPY_DEBOUNCE_MS = 700;
 
 export type Mode = "move" | "coin" | "radio_movement" | "radio_all_clear";
 
@@ -45,7 +51,17 @@ export class GameScene extends Phaser.Scene {
   failed: TurnFailed | null = null;
   /** Quién decidió el último turno enemigo (modo, respaldo, caché, latencia). */
   lastMeta: TurnResponse["meta"] | null = null;
+  /** Lo último que dijo Jev: la decisión del turno enemigo o la predicción en vivo de la infiltrada. */
+  jev: { kind: "decision" | "spy"; turn: number; response: TurnResponse } | null = null;
+  spyStatus: "idle" | "loading" | "ok" | "error" = "idle";
+  spyError = "";
+  /** Para repetir el turno enemigo: el estado de antes y sus eventos. */
+  lastEnemyTurn: { before: GameState; events: GameEvent[] } | null = null;
 
+  private spySeq = 0;
+  private spyKey = "";
+  private spyTimer: Phaser.Time.TimerEvent | null = null;
+  private jevLabels = new Map<GuardId, Phaser.GameObjects.Container>();
   private mapGfx!: Phaser.GameObjects.Graphics;
   private hintGfx!: Phaser.GameObjects.Graphics;
   private coneGfx!: Phaser.GameObjects.Graphics;
@@ -61,8 +77,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Capas de abajo hacia arriba (ARCHITECTURE.md, "Eventos → capas"). La de info de Jev llega en la fase 3.
-    const layers = { map: this.add.layer(), cones: this.add.layer(), entities: this.add.layer(), effects: this.add.layer() };
+    // Capas de abajo hacia arriba (ARCHITECTURE.md, "Eventos → capas").
+    const layers = { map: this.add.layer(), cones: this.add.layer(), entities: this.add.layer(), effects: this.add.layer(), jev: this.add.layer() };
     this.effects = layers.effects;
     this.mapGfx = this.add.graphics();
     this.hintGfx = this.add.graphics();
@@ -96,6 +112,15 @@ export class GameScene extends Phaser.Scene {
     }
     layers.entities.add([...this.sprites.values()]);
 
+    // Info de Jev: una etiqueta por guardia con la opción elegida y su probabilidad. Va en su propia capa
+    // (encima de todo) y se mueve junto con el guardia.
+    for (const g of this.state.guards) {
+      const label = this.add.text(0, -TILE * 0.5, "", { ...TEXT, fontSize: "11px", fontStyle: "bold", backgroundColor: "#141221" }).setOrigin(0.5, 1).setPadding(3, 1);
+      const c = this.add.container(0, 0, [label]).setVisible(false);
+      this.jevLabels.set(g.id, c);
+      layers.jev.add(c);
+    }
+
     this.input.on("pointerdown", (p: Phaser.Input.Pointer) => this.onTile({ x: Math.floor((p.x - MAP.x) / TILE), y: Math.floor((p.y - MAP.y) / TILE) }));
     const keys = this.input.keyboard;
     keys?.on("keydown-ONE", () => this.select("zorro"));
@@ -103,6 +128,9 @@ export class GameScene extends Phaser.Scene {
     keys?.on("keydown-THREE", () => this.select("eco"));
     keys?.on("keydown-ESC", () => this.setMode("move"));
     keys?.on("keydown-ENTER", () => void this.endTurn());
+    keys?.on("keydown-I", () => this.useSpy());
+    keys?.on("keydown-R", () => void this.replayEnemyTurn());
+    keys?.on("keydown-V", () => this.toggleViewer());
 
     this.scene.launch("ui");
     this.refresh();
@@ -141,8 +169,11 @@ export class GameScene extends Phaser.Scene {
     try {
       const r = await requestTurn("enemy-turn", this.state, fallback);
       this.lastMeta = r.meta;
+      this.jev = { kind: "decision", turn: this.state.turn, response: r };
+      this.cancelSpy();
       this.setStatus(r.meta.note ?? "");
       const result = resolveEnemyTurn(this.level, this.state, { guards: r.guards, raiseAlarm: r.raiseAlarm.raised });
+      this.lastEnemyTurn = { before: this.state, events: result.events };
       await this.play(result.events);
       this.state = result.state;
       this.events.emit("game-events", result.events);
@@ -153,6 +184,93 @@ export class GameScene extends Phaser.Scene {
     if (this.state.thieves[this.selected].caught) this.selected = activeThieves(this.state)[0]?.id ?? this.selected;
     this.busy = false;
     this.refresh();
+  }
+
+  /** Vuelve a animar el último turno enemigo desde el estado de antes; al terminar, vuelve al estado actual. */
+  async replayEnemyTurn(): Promise<void> {
+    if (this.busy || !this.lastEnemyTurn) return;
+    this.busy = true;
+    this.hintGfx.clear();
+    this.setStatus("Repetición del turno enemigo…");
+    await this.play(this.lastEnemyTurn.events, this.lastEnemyTurn.before);
+    this.busy = false;
+    this.setStatus("");
+    this.refresh();
+  }
+
+  // ---------------------------------------------------------------- infiltrada
+
+  /** Activa la infiltrada (gasta un uso) y consulta ya; después se actualiza sola con cada cambio. */
+  useSpy(): void {
+    if (this.busy || !canUseSpy(this.state)) return;
+    this.state = activateSpy(this.state).state;
+    this.refresh();
+    void this.querySpy();
+  }
+
+  /** Agrupa cambios seguidos en una sola consulta (debounce). */
+  private scheduleSpy(): void {
+    if (!this.state.spy.activeThisTurn) return;
+    this.spyTimer?.remove();
+    this.spyTimer = this.time.delayedCall(SPY_DEBOUNCE_MS, () => void this.querySpy());
+    this.spyStatus = "loading"; // la espera del debounce también cuenta: hay una actualización en camino
+    this.events.emit("changed");
+  }
+
+  private cancelSpy(): void {
+    this.spyTimer?.remove();
+    this.spySeq++; // una respuesta que llegue tarde se descarta
+    this.spyStatus = "idle";
+  }
+
+  /**
+   * Cada consulta es una llamada a Jev. Si el estado no cambió desde la última, no se pregunta de nuevo; y si
+   * el turno termina sin cambios, el servidor responde el turno enemigo con esta misma respuesta (caché).
+   */
+  private async querySpy(): Promise<void> {
+    const snapshot = JSON.stringify(this.state);
+    if (snapshot === this.spyKey && this.jev?.kind === "spy") {
+      this.spyStatus = "ok";
+      this.events.emit("changed");
+      return;
+    }
+    const seq = ++this.spySeq;
+    this.spyStatus = "loading";
+    this.events.emit("changed");
+    try {
+      const r = await requestTurn("spy", this.state);
+      if (seq !== this.spySeq) return;
+      this.spyKey = snapshot;
+      this.jev = { kind: "spy", turn: this.state.turn, response: r };
+      this.spyStatus = "ok";
+    } catch (e) {
+      if (seq !== this.spySeq) return;
+      this.spyStatus = "error";
+      this.spyError = e instanceof Error ? e.message : String(e);
+    }
+    this.refresh();
+  }
+
+  // ---------------------------------------------------------------- visor de la llamada completa
+
+  toggleViewer(): void {
+    const el = document.getElementById("call-viewer")!;
+    el.hidden = !el.hidden;
+    this.updateViewer();
+  }
+
+  private updateViewer(): void {
+    const el = document.getElementById("call-viewer");
+    if (!el || el.hidden) return;
+    const j = this.jev;
+    if (!j) {
+      el.textContent = "Todavía no hay ninguna llamada a Jev. (V cierra)";
+      return;
+    }
+    const m = j.response.meta;
+    const head = `${j.kind === "spy" ? "INFILTRADA" : "TURNO ENEMIGO"} · turno ${j.turn} · ${m.mode}${m.source === "respaldo" ? " (respaldo)" : ""}${m.cached ? " (caché)" : ""} · ${m.latencyMs} ms · modelo ${m.model ?? "—"}   (V cierra)`;
+    const { state, questions, answers } = j.response.call;
+    el.textContent = [head, "── estado que ve Jev ──", JSON.stringify(state, null, 2), "── preguntas ──", JSON.stringify(questions, null, 2), "── respuestas ──", JSON.stringify(answers, null, 2)].join("\n\n");
   }
 
   // ---------------------------------------------------------------- input del mapa
@@ -185,6 +303,7 @@ export class GameScene extends Phaser.Scene {
     this.busy = false;
     this.events.emit("game-events", result.events);
     this.refresh();
+    this.scheduleSpy(); // con la infiltrada activa, cada cambio del jugador actualiza la predicción
   }
 
   private setStatus(text: string): void {
@@ -200,6 +319,7 @@ export class GameScene extends Phaser.Scene {
     this.drawCones(view);
     this.drawHints();
     this.syncSprites(view);
+    this.updateViewer();
     this.events.emit("changed");
   }
 
@@ -253,21 +373,38 @@ export class GameScene extends Phaser.Scene {
     for (const g of view.guards) {
       const c = this.sprites.get(g.id)!.setPosition(px(g.pos).x, px(g.pos).y);
       (c.getByName("body") as Phaser.GameObjects.Container).setRotation(ROTATION[g.facing]);
+      this.jevLabels.get(g.id)!.setPosition(px(g.pos).x, px(g.pos).y);
     }
+  }
+
+  /** Etiqueta sobre el guardia: la opción elegida y su probabilidad (naranja si era poco probable). */
+  private setLabel(guard: GuardId, d: GuardDecision | null): void {
+    const c = this.jevLabels.get(guard)!;
+    c.setVisible(d !== null);
+    if (d) (c.list[0] as Phaser.GameObjects.Text).setText(`${OPTION_LABEL[d.option]} ${pct(d.probability)}`).setColor(probColor(d.probability));
   }
 
   // ---------------------------------------------------------------- animación de eventos
 
-  /** Anima los eventos en orden sobre una copia del estado que se va actualizando. */
-  private async play(events: GameEvent[]): Promise<void> {
-    const view = clone(this.state);
+  /**
+   * Anima los eventos en orden sobre una copia del estado que se va actualizando. `from` es el estado del que
+   * parten (el actual, o el de antes del turno enemigo para la repetición).
+   */
+  private async play(events: GameEvent[], from: GameState = this.state): Promise<void> {
+    const view = clone(from);
+    if (from !== this.state) {
+      this.drawMap(view);
+      this.drawCones(view);
+      this.syncSprites(view);
+      for (const g of view.guards) this.setLabel(g.id, null);
+    }
     const guardPos = (id: string) => view.guards.find((g) => g.id === id)!.pos;
     for (const e of events) {
       switch (e.type) {
         case "thief_moved":
           for (const p of e.path) {
             view.thieves[e.thief].pos = p;
-            await this.tweenTo(this.sprites.get(e.thief)!, p, 110);
+            await this.tweenTo([this.sprites.get(e.thief)!], p, 110);
           }
           break;
         case "guard_moved": {
@@ -276,7 +413,7 @@ export class GameScene extends Phaser.Scene {
           (this.sprites.get(g.id)!.getByName("body") as Phaser.GameObjects.Container).setRotation(ROTATION[e.facing]);
           for (const p of e.path) {
             g.pos = p;
-            await this.tweenTo(this.sprites.get(g.id)!, p, 140);
+            await this.tweenTo([this.sprites.get(g.id)!, this.jevLabels.get(g.id)!], p, 140);
           }
           if (!e.path.length) await this.wait(150);
           this.drawCones(view);
@@ -318,6 +455,9 @@ export class GameScene extends Phaser.Scene {
           this.syncSprites(view);
           break;
         case "guard_decided":
+          this.setLabel(e.decision.guard, e.decision);
+          await this.wait(250);
+          break;
         case "turn_ended":
         case "game_over":
           break;
@@ -325,8 +465,8 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private tweenTo(target: Phaser.GameObjects.Container, p: Vec, duration: number): Promise<void> {
-    return new Promise((resolve) => this.tweens.add({ targets: target, ...px(p), duration, onComplete: () => resolve() }));
+  private tweenTo(targets: Phaser.GameObjects.Container[], p: Vec, duration: number): Promise<void> {
+    return new Promise((resolve) => this.tweens.add({ targets, ...px(p), duration, onComplete: () => resolve() }));
   }
 
   private wait(ms: number): Promise<void> {
@@ -334,7 +474,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private float(at: Vec, text: string, color: string, size = 12): Promise<void> {
-    const t = this.add.text(px(at).x, px(at).y - TILE * 0.5, text, { ...TEXT, fontSize: `${size}px`, color, fontStyle: "bold", backgroundColor: "#0d0e14" }).setOrigin(0.5, 1);
+    const t = this.add.text(px(at).x, px(at).y - TILE * 0.95, text, { ...TEXT, fontSize: `${size}px`, color, fontStyle: "bold", backgroundColor: "#0d0e14" }).setOrigin(0.5, 1);
     this.effects.add(t);
     this.tweens.add({ targets: t, y: t.y - 18, alpha: 0, delay: 500, duration: 500, onComplete: () => t.destroy() });
     return this.wait(420);
