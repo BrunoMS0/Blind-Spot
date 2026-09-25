@@ -1,8 +1,8 @@
 import Phaser from "phaser";
-import { ALARM_TO_LOSE, GAME_NAME, RADIO_USES, RAISE_ALARM_THRESHOLD, THIEF_IDS, THIEVES, VAULT_FORCE_ACTIONS } from "../shared/config";
+import { ALARM_TO_LOSE, GAME_NAME, GUARD_OPTIONS, RADIO_USES, RAISE_ALARM_THRESHOLD, THIEF_IDS, THIEVES, VAULT_FORCE_ACTIONS } from "../shared/config";
 import { abilityState, availableActions, canUseRadio, type Ability } from "../shared/player-turn";
 import { radioTrust } from "../shared/rules";
-import type { GameEvent, GuardOption, ThiefId } from "../shared/types";
+import type { GameEvent, ThiefId } from "../shared/types";
 import type { GuardAnswer } from "../shared/api";
 import { BOARD, CANVAS, MAP, type GameScene } from "./game-scene";
 import { ABILITY, ABILITY_BLOCK, COMMANDER_INFO, LOSS, OPTION_LABEL, pct, TRUST } from "./texts";
@@ -189,9 +189,8 @@ export class UIScene extends Phaser.Scene {
     replay.setX(viewer.x - 8 - replay.width);
     const sub = j ? `Resultado de la llamada a Jev del turno ${j.turn}. ${this.who()}` : "Todavía no decidieron nada. Termina el turno para ver qué eligió cada guardia y con qué probabilidad.";
     const subText = this.text(x, top + 50, sub, { ...ui(14, PALETTE.muted), wordWrap: { width: w } });
-    let y = top + 58 + subText.height;
     if (!j) return;
-    for (const g of j.response.guards) y = this.guardCard(g, x, y, w) + 6;
+    this.decisionTable(j.response.guards, x, top + 58 + subText.height, w);
     this.alarmRow(j.response.raiseAlarm, x, top + h - 48, w);
   }
 
@@ -203,29 +202,40 @@ export class UIScene extends Phaser.Scene {
     return m.mode === "real" ? `Una sola solicitud decidió a los tres guardias (${m.latencyMs} ms).` : m.mode === "replay" ? "Respuesta grabada (replay)." : "Decidió el simulador (mock).";
   }
 
-  /** Tarjeta de un guardia: nombre, zona y las barras de todas las opciones que se le ofrecieron. */
-  private guardCard(g: GuardAnswer, x: number, y: number, w: number): number {
+  /**
+   * Las decisiones en una tabla fija: una fila por opción (siempre todas, en el orden de GUARD_OPTIONS) y una
+   * columna por guardia. De un turno a otro cada barra queda en su lugar y se ve cómo sube o baja; lo que no se
+   * le ofreció a un guardia ese turno queda con una raya.
+   */
+  private decisionTable(guards: GuardAnswer[], x: number, y: number, w: number): void {
     const b = this.board;
-    const guard = b.state.guards.find((s) => s.id === g.guard)!;
-    const rows = (Object.entries(g.probabilities) as [GuardOption, number][]).sort((a, c) => c[1] - a[1]);
-    const h = 28 + rows.length * 16 + 6;
-    this.keep(box(this, x, y, w, h, PALETTE.bg));
-    const name = b.level.guards.find((l) => l.id === g.guard)?.name ?? g.guard;
-    this.text(x + 10, y + 5, name, typ(17));
-    this.text(x + w - 10, y + 8, b.level.zones[b.level.zoneIds[guard.pos.y]?.[guard.pos.x] ?? ""]?.label ?? "", ui(12, PALETTE.muted)).setOrigin(1, 0);
-    const bars = this.keep(this.add.graphics());
-    const labelW = 190;
-    const trackX = x + 10 + labelW;
-    const trackW = w - 20 - labelW - 48;
-    rows.forEach(([option, p], i) => {
-      const ry = y + 29 + i * 16;
-      const pick = option === g.option;
-      this.text(x + 10, ry, OPTION_LABEL[option], ui(13, PALETTE.ink, pick ? "700" : "400"));
-      bars.fillStyle(num(PALETTE.bar), 1).fillRect(trackX, ry + 3, trackW, 10);
-      bars.fillStyle(num(pick ? PALETTE.gold : PALETTE.muted), 1).fillRect(trackX, ry + 3, trackW * p, 10);
-      this.text(x + w - 10, ry, pct(p), ui(13, PALETTE.ink, pick ? "700" : "400")).setOrigin(1, 0);
+    const labelW = 140;
+    const colW = (w - 20 - labelW) / guards.length;
+    const barW = colW - 50;
+    const headH = 44;
+    const rowH = 36;
+    this.keep(box(this, x, y, w, headH + GUARD_OPTIONS.length * rowH + 8, PALETTE.bg));
+    const g = this.keep(this.add.graphics());
+    const colX = (c: number) => x + 10 + labelW + c * colW;
+    guards.forEach((a, c) => {
+      const guard = b.state.guards.find((s) => s.id === a.guard)!;
+      this.text(colX(c), y + 6, b.level.guards.find((l) => l.id === a.guard)?.name ?? a.guard, typ(17));
+      this.text(colX(c), y + 26, b.level.zones[b.level.zoneIds[guard.pos.y]?.[guard.pos.x] ?? ""]?.label ?? "", ui(11, PALETTE.muted));
     });
-    return y + h;
+    GUARD_OPTIONS.forEach((option, r) => {
+      const ry = y + headH + r * rowH;
+      const offered = guards.some((a) => a.probabilities[option] !== undefined);
+      g.fillStyle(num(PALETTE.line), 1).fillRect(x + 10, ry, w - 20, 1);
+      this.text(x + 10, ry + 10, OPTION_LABEL[option], ui(13, offered ? PALETTE.ink : PALETTE.muted));
+      guards.forEach((a, c) => {
+        const p = a.probabilities[option];
+        const pick = option === a.option;
+        g.fillStyle(num(PALETTE.bar), p === undefined ? 0.4 : 1).fillRect(colX(c), ry + 12, barW, 12);
+        if (p !== undefined) g.fillStyle(num(pick ? PALETTE.gold : PALETTE.muted), 1).fillRect(colX(c), ry + 12, barW * p, 12);
+        const color = pick ? PALETTE.gold : p === undefined ? PALETTE.muted : PALETTE.ink;
+        this.text(colX(c) + colW - 10, ry + 10, p === undefined ? "—" : pct(p), ui(13, color, pick ? "700" : "400")).setOrigin(1, 0);
+      });
+    });
   }
 
   /** raise_alarm frente al umbral: solo cuenta si la barra pasa la marca. */

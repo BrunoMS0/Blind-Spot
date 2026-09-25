@@ -201,8 +201,8 @@ demasiado moderna.
   la que está bajo el mouse se ilumina con su nombre en el cartel (`drawPick`, `mapPrompt`).
 - **Interfaz** (`widgets.ts`, `theme.ts`): *Special Elite* para títulos y cifras, *IBM Plex Sans* para leer.
   Botones planos con borde de 2 px (tinta = principal, dorado = tomar el diamante, naranja = modo activo).
-  Marcador de turno, alarma, usos de radio y llamadas a Jev. Columna derecha: lo que decidieron (tarjetas por
-  guardia con barras, dorado = elegida, y la alarma frente a su umbral), el panel de la radio (usos,
+  Marcador de turno, alarma, usos de radio y llamadas a Jev. Columna derecha: lo que decidieron (tabla fija de
+  barras, dorado = elegida, y la alarma frente a su umbral), el panel de la radio (usos,
   para qué sirve, confianza en tres escalones y reporte en el aire), el objetivo con "Terminar turno" y la
   bitácora con la entrada más reciente arriba.
 - **Pantalla**: canvas 16:9 (1600×900) escalado con FIT; tecla F o botón para pantalla completa.
@@ -212,10 +212,11 @@ demasiado moderna.
 
 ## Jev visible (fase 3)
 
-- **Etiqueta** sobre cada guardia (capa de Jev, se mueve con él): opción sorteada y probabilidad. Naranja si
-  era poco probable (< 20 %): así se ve que el sorteo no toma siempre la más probable.
-- **Barras de Jev** (columna derecha): por guardia, las barras de todas las opciones ofrecidas, la elegida
-  marcada, y la probabilidad de `raise_alarm` frente al umbral.
+- **Etiqueta** sobre cada guardia (capa de Jev, se mueve con él): opción sorteada y probabilidad. Una
+  probabilidad baja en la etiqueta muestra que el sorteo no toma siempre la más probable.
+- **Barras de Jev** (columna derecha): tabla fija, una fila por opción (todas, en el orden de `GUARD_OPTIONS`)
+  y una columna por guardia; la elegida en dorado y una raya en lo que no se le ofreció. Como el orden no
+  cambia, de un turno a otro se ve subir o bajar cada barra. Debajo, `raise_alarm` frente al umbral.
 - **Infiltrada: quitada.** Mostraba en vivo las probabilidades antes de terminar el turno (`/api/spy`). En la
   práctica no aportaba una decisión clara al jugador y se quitó por decisión del usuario; su espacio pasó al
   panel de la radio. Los registros viejos pueden tener `endpoint: "spy"`.
