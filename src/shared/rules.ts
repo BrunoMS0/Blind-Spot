@@ -1,10 +1,12 @@
 // Reglas que comparten el turno del jugador y el turno enemigo: partida nueva, avistamientos, capturas,
 // engaños de la radio y fin de partida. Estas funciones modifican el estado que reciben; las funciones
 // públicas de player-turn.ts y enemy-turn.ts clonan antes de llamarlas.
-import { ALARM_TO_LOSE, RADIO_USES, SPY_USES, THIEF_IDS } from "./config";
-import { adjacent, same, zoneAt, type Level } from "./level";
-import { canSee } from "./vision";
-import type { CommanderId, GameEvent, GameState, GuardId, GuardState, Outcome, RadioTrust, ThiefId, ThiefState } from "./types";
+import { ALARM_TO_LOSE, BLACKOUT_USES, RADIO_USES, THIEF_IDS } from "./config";
+import { adjacent, DIRS, key, same, tileAt, zoneAt, type Level } from "./level";
+import { explore } from "./paths";
+import { rngFor } from "./rng";
+import { canSee, visibleTiles } from "./vision";
+import type { CommanderId, Facing, GameEvent, GameState, GuardId, GuardState, Outcome, RadioTrust, ThiefId, ThiefState, Vec } from "./types";
 
 export interface Result {
   state: GameState;
@@ -13,7 +15,18 @@ export interface Result {
 
 export const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 
+/**
+ * Partida nueva con posiciones de salida sorteadas: cada ladrón en una casilla de la entrada y cada guardia en
+ * una de su sala, mirando hacia cualquier lado. El sorteo usa la semilla: misma semilla, misma partida.
+ */
 export function newGame(level: Level, commander: CommanderId, seed: number): GameState {
+  const s = newFixedGame(level, commander, seed);
+  shuffleStart(level, s);
+  return s;
+}
+
+/** Partida con las posiciones escritas en el nivel. La usan las pruebas y el banco, que necesitan situaciones exactas. */
+export function newFixedGame(level: Level, commander: CommanderId, seed: number): GameState {
   const thief = (id: ThiefId): ThiefState => ({ id, pos: { ...level.thieves[id] }, caught: false, hasDiamond: false, moved: false, acted: false });
   return {
     levelId: level.id,
@@ -28,9 +41,59 @@ export function newGame(level: Level, commander: CommanderId, seed: number): Gam
     diamond: { ...level.diamond },
     noises: [],
     radio: { usesLeft: RADIO_USES, usedThisTurn: false, active: null, deceptions: 0 },
-    spy: { usesLeft: SPY_USES, activeThisTurn: false },
+    blackout: { usesLeft: BLACKOUT_USES, zone: null },
     outcome: { status: "playing" },
   };
+}
+
+/** Un guardia no empieza a menos de estas casillas de camino de un ladrón. */
+export const MIN_START_DISTANCE = 6;
+/** Ni mirando a un muro: su cono tiene que cubrir al menos estas casillas. */
+const MIN_START_VIEW = 4;
+
+/**
+ * Sortea las posiciones de salida. La sala de cada uno es la de su posición escrita en el nivel. Un guardia no
+ * puede empezar viendo a un ladrón, ni cerca de uno, ni con el cono contra un muro; si ninguna casilla de su
+ * sala cumple, se queda en la del nivel. Su patrulla empieza por la parada más cercana.
+ */
+function shuffleStart(level: Level, s: GameState): void {
+  const rng = rngFor(s.seed, 0, "start");
+  const shuffled = <T>(xs: T[]): T[] => {
+    const out = [...xs];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [out[i], out[j]] = [out[j]!, out[i]!];
+    }
+    return out;
+  };
+  const floorIn = (zone: string | null): Vec[] =>
+    level.zoneIds.flatMap((row, y) => row.flatMap((z, x) => (z === zone && tileAt(level, { x, y }) === "floor" && !same({ x, y }, level.diamond) ? [{ x, y }] : [])));
+
+  const thieves = Object.values(s.thieves);
+  const spots = shuffled(floorIn(zoneAt(level, level.thieves.zorro)));
+  for (const t of thieves) t.pos = spots.pop() ?? t.pos;
+
+  const taken = new Set(thieves.map((t) => key(t.pos)));
+  for (const g of s.guards) {
+    const home = level.guards.find((x) => x.id === g.id)!;
+    const facings = Object.keys(DIRS) as Facing[];
+    const ok = (pos: Vec, facing: Facing) => {
+      if (taken.has(key(pos))) return false;
+      const viewer = { pos, facing };
+      if (thieves.some((t) => canSee(level, s, viewer, t.pos))) return false;
+      if (visibleTiles(level, s, viewer).length < MIN_START_VIEW) return false;
+      const dist = explore(level, s, pos).cells;
+      return thieves.every((t) => (dist.get(key(t.pos))?.dist ?? Infinity) >= MIN_START_DISTANCE);
+    };
+    const spot = shuffled(floorIn(zoneAt(level, home.start)))
+      .flatMap((pos) => shuffled(facings).map((facing) => ({ pos, facing })))
+      .find((c) => ok(c.pos, c.facing));
+    if (spot) Object.assign(g, { pos: spot.pos, facing: spot.facing });
+    taken.add(key(g.pos));
+    const dist = explore(level, s, g.pos).cells;
+    const stops = home.patrol.map((p) => dist.get(key(p))?.dist ?? Infinity);
+    g.patrolIndex = stops.indexOf(Math.min(...stops));
+  }
 }
 
 export const activeThieves = (s: GameState): ThiefState[] => Object.values(s.thieves).filter((t) => !t.caught);

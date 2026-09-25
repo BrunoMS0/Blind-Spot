@@ -1,13 +1,13 @@
 // Única fuente de verdad para el nombre del juego y las constantes de reglas.
 // El mapa, las zonas y las rutas de los guardias NO están aquí: son datos del nivel (LevelData).
-export const GAME_NAME = "El golpe";
+export const GAME_NAME = "Blind Spot";
 
 export const SERVER_PORT = 8787;
 
 export const THIEF_IDS = ["zorro", "llave", "eco"] as const;
 
 export const THIEVES = {
-  zorro: { name: "Zorro", move: 5, ability: null },
+  zorro: { name: "Zorro", move: 5, ability: "blackout" },
   llave: { name: "Llave", move: 4, ability: "force_vault" },
   eco: { name: "Eco", move: 4, ability: "throw_coin" },
 } as const;
@@ -34,10 +34,12 @@ export const RAISE_ALARM_CAP = ALARM_TO_LOSE - 1;
 export const RAISE_ALARM_THRESHOLD = 0.5;
 
 export const RADIO_USES = 3;
-export const SPY_USES = 2;
+/** El apagón de Zorro: usos por partida y hasta dónde ven los guardias dentro de la sala a oscuras. */
+export const BLACKOUT_USES = 2;
+export const BLACKOUT_RANGE = 2;
 
 /** Todo lo que un guardia puede elegir. Cada turno solo se le ofrecen las que aplican. */
-export const GUARD_OPTIONS = ["patrol", "investigate_noise", "respond_radio", "chase", "guard_vault", "hold"] as const;
+export const GUARD_OPTIONS = ["patrol", "investigate_noise", "respond_radio", "check_blackout", "chase", "guard_vault", "hold"] as const;
 
 /** Los comandantes solo difieren en el texto de su doctrina (server/doctrines.ts, fase 2). */
 export const COMMANDERS = ["cauteloso", "impulsivo", "rencoroso"] as const;

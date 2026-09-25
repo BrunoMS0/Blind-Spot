@@ -1,47 +1,54 @@
 import Phaser from "phaser";
 import { COMMANDERS, GAME_NAME } from "../shared/config";
+import { LEVELS } from "../shared/level";
 import type { CommanderId } from "../shared/types";
-import { CANVAS, TEXT } from "./game-scene";
+import { makeArt, SCALE } from "./art";
+import { CANVAS } from "./game-scene";
 import { COMMANDER_INFO } from "./texts";
+import { PALETTE, typ, ui } from "./theme";
+import { box, button } from "./widgets";
 
-// Selector de comandante antes de empezar. Elegir uno arranca GameScene con esa doctrina.
+// Selector de comandante antes de empezar, con el tono de la vista previa: título a máquina, un párrafo que
+// cuenta el golpe y tres fichas de comandante con su guardia en pixel art.
 export class MenuScene extends Phaser.Scene {
   constructor() {
     super("menu");
   }
 
   create(data: { seed: number }): void {
+    makeArt(this, LEVELS.museo!);
     const cx = CANVAS.w / 2;
-    this.add.text(cx, 120, GAME_NAME, { fontFamily: "Georgia, serif", fontSize: "64px", fontStyle: "italic", color: "#e8e4d8" }).setOrigin(0.5);
-    this.add.text(cx, 180, "Un museo de noche. Tres ladrones. Un diamante.", { fontFamily: "Georgia, serif", fontSize: "18px", color: "#8a8fa3" }).setOrigin(0.5);
-    this.add.text(cx, 250, "¿Quién comanda a los guardias esta noche?", { ...TEXT, fontSize: "14px", color: "#c9a3ff" }).setOrigin(0.5);
-
-    COMMANDERS.forEach((id, i) => this.card(cx + (i - 1) * 330, 400, id, data.seed));
-
-    this.add.text(cx, CANVAS.h - 40, "Los guardias los decide Jev (TypeSafe AI). Los comandantes solo difieren en su doctrina.", { ...TEXT, color: "#5d6378" }).setOrigin(0.5);
+    const [first, ...rest] = GAME_NAME.split(" ");
+    const t1 = this.add.text(0, 110, `${first} `, typ(110));
+    const t2 = this.add.text(0, 110, rest.join(" "), typ(110, PALETTE.gold));
+    t1.setX(cx - (t1.width + t2.width) / 2);
+    t2.setX(t1.x + t1.width);
+    this.add
+      .text(cx, 290, "Tu equipo entra al museo de noche para robar el diamante. Los guardias los controla Jev: al final de tu turno, una sola llamada decide qué hace cada uno. Zorro puede dejar salas a oscuras, Eco los distrae con monedas y tu radio pirateada puede hacerles creer cosas que no son ciertas.", {
+        ...ui(19, PALETTE.muted),
+        align: "center",
+        wordWrap: { width: 900 },
+        lineSpacing: 6,
+      })
+      .setOrigin(0.5, 0);
+    this.add.text(cx, 440, "¿Quién está a cargo de la seguridad esta noche?", typ(28)).setOrigin(0.5);
+    COMMANDERS.forEach((id, i) => this.card(cx - 520 + i * 360, 500, id, data.seed));
+    this.add.text(cx, CANVAS.h - 44, "Mueve con clic, 1·2·3 elige ladrón, Enter termina el turno, F pantalla completa.", ui(15, PALETTE.muted)).setOrigin(0.5);
   }
 
   private card(x: number, y: number, id: CommanderId, seed: number): void {
     const info = COMMANDER_INFO[id];
-    const box = this.add.rectangle(0, 0, 300, 190, 0x12141c).setStrokeStyle(1, 0x3a3f52);
-    const c = this.add.container(x, y, [
-      box,
-      this.add.text(0, -58, info.name, { fontFamily: "Georgia, serif", fontSize: "28px", color: "#e8d27a" }).setOrigin(0.5),
-      this.add.text(0, 10, info.blurb, { ...TEXT, fontSize: "13px", color: "#aab0c0", align: "center", wordWrap: { width: 250 } }).setOrigin(0.5),
-      this.add.text(0, 70, "elegir", { ...TEXT, color: "#5d6378" }).setOrigin(0.5),
-    ]);
-    box.setInteractive({ useHandCursor: true });
-    box.on("pointerover", () => {
-      box.setStrokeStyle(2, 0xe8d27a);
-      this.tweens.add({ targets: c, scale: 1.04, duration: 120 });
-    });
-    box.on("pointerout", () => {
-      box.setStrokeStyle(1, 0x3a3f52);
-      this.tweens.add({ targets: c, scale: 1, duration: 120 });
-    });
-    box.on("pointerdown", () => {
+    const w = 320;
+    const h = 300;
+    box(this, x, y, w, h);
+    this.add.image(x + w / 2, y + 62, `guard-${id}-down-0`).setScale(SCALE + 2); // sus guardias visten así
+    this.add.text(x + w / 2, y + 118, info.name, typ(30)).setOrigin(0.5, 0);
+    this.add.text(x + w / 2, y + 162, info.blurb, { ...ui(16, PALETTE.muted), align: "center", wordWrap: { width: w - 40 } }).setOrigin(0.5, 0);
+    const start = () => {
       this.cameras.main.fadeOut(250, 0, 0, 0);
       this.cameras.main.once("camerafadeoutcomplete", () => this.scene.start("game", { commander: id, seed }));
-    });
+    };
+    const pick = button(this, 0, y + h - 60, `Jugar contra el ${info.name.toLowerCase()}`, start, { variant: "primary", size: 15 });
+    pick.setX(x + (w - pick.width) / 2);
   }
 }

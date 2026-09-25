@@ -1,4 +1,4 @@
-// Contrato HTTP entre cliente y servidor. /api/enemy-turn y /api/spy usan el mismo pedido y la misma respuesta.
+// Contrato HTTP entre cliente y servidor: /api/enemy-turn.
 // El pedido es solo la foto de la partida, validada con zod: no hay forma de mandarle texto libre a Jev.
 import { z } from "zod";
 import { COMMANDERS, GUARD_OPTIONS, THIEF_IDS } from "./config";
@@ -41,7 +41,7 @@ export const GameStateSchema = z.object({
   diamond: vec.nullable(),
   noises: z.array(z.object({ pos: vec, turn: nat })).max(8),
   radio: z.object({ usesLeft: nat, usedThisTurn: z.boolean(), active: radioReport.nullable(), deceptions: nat }),
-  spy: z.object({ usesLeft: nat, activeThisTurn: z.boolean() }),
+  blackout: z.object({ usesLeft: nat, zone: z.string().max(40).nullable() }),
   outcome: z.discriminatedUnion("status", [
     z.object({ status: z.literal("playing") }),
     z.object({ status: z.literal("won") }),

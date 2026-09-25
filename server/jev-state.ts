@@ -12,6 +12,7 @@ const OPTION_MEANING: Record<GuardOption, string> = {
   patrol: "continue the patrol route",
   investigate_noise: "walk to the noise this guard heard",
   respond_radio: "go to the zone named in the radio report",
+  check_blackout: "go to the room where the lights went out",
   chase: "go after the intruder this guard saw",
   guard_vault: "go to the vault door and protect it",
   hold: "stay in place and look around",
@@ -21,6 +22,7 @@ const LAST_DECISION: Record<GuardOption, string> = {
   patrol: "continued the patrol",
   investigate_noise: "went to check a noise",
   respond_radio: "followed a radio report",
+  check_blackout: "went to check the blackout",
   chase: "chased an intruder",
   guard_vault: "went to guard the vault",
   hold: "held position and looked around",
@@ -39,6 +41,7 @@ export function buildJevTurn(level: Level, s: GameState, analysis: TurnAnalysis)
     radio_report: report ? (report.kind === "movement" ? `movement in the ${zone(report.zone)}` : `all clear in the ${zone(report.zone)}`) : "none",
     noises_this_turn: s.noises.length ? s.noises.map((n) => `a coin in the ${zone(zoneAt(level, n.pos) ?? "")}`) : "none",
     sightings: sightings(level, s),
+    lights: s.blackout.zone ? `OUT in the ${zone(s.blackout.zone)}: nobody can see far in there` : "on everywhere",
   };
 
   const guards: { [id: string]: JsonValue } = {};
@@ -93,6 +96,8 @@ function describe(level: Level, s: GameState, from: Vec, a: GuardAnalysis, optio
       return `heard a coin drop in the ${where}, ${away}`;
     case "respond_radio":
       return `radio reports movement in the ${where}, ${away}`;
+    case "check_blackout":
+      return `the lights went out in the ${where}, ${away}`;
     case "chase":
       return `saw an intruder in the ${where} ${ago(s.turn - (s.guards.find((g) => g.id === a.guard)?.lastSighting?.turn ?? s.turn))}, ${away}`;
     case "guard_vault":

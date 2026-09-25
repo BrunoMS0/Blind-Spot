@@ -14,6 +14,7 @@ export function analyzeTurn(level: Level, s: GameState): TurnAnalysis {
     radioTrust: radioTrust(s),
     activeReport: s.radio.active,
     vaultOpen: s.vault.open,
+    blackout: s.blackout.zone,
   };
 }
 
@@ -32,6 +33,8 @@ function analyzeGuard(level: Level, s: GameState, g: GuardState): GuardAnalysis 
       .filter((f) => f !== undefined && f.distance <= HEARING_RANGE)
       .sort((a, b) => a!.distance - b!.distance)[0],
     respond_radio: s.radio.active?.kind === "movement" && level.zones[s.radio.active.zone] ? facts(level.zones[s.radio.active.zone]!.center) : undefined,
+    // Todos se enteran del apagón (se cortó la luz): cualquiera puede ir a revisar la sala.
+    check_blackout: s.blackout.zone && level.zones[s.blackout.zone] ? facts(level.zones[s.blackout.zone]!.center) : undefined,
     chase: g.lastSighting && s.turn - g.lastSighting.turn <= SIGHTING_TURNS ? facts(g.lastSighting.pos) : undefined,
     guard_vault: facts(level.vaultFront),
     hold: facts(g.pos),

@@ -41,6 +41,7 @@ export interface DecisionProvider {
 /** Una línea del JSONL en logs/. El modo replay las lee de vuelta. */
 export interface DecisionRecord {
   ts: string;
+  /** Siempre "enemy-turn" (los registros viejos pueden decir "spy": la infiltrada se quitó). */
   endpoint: "enemy-turn" | "spy";
   /** El proveedor que respondió de verdad (p. ej. "mock" si se agotó el tope diario). */
   mode: ProviderMode;

@@ -33,7 +33,7 @@ function fakeGateway(statuses: number[]) {
 const input = (timeoutMs: number): ProviderInput => ({
   jevState: { shared: { note: "test" } },
   questions: { vega_plan: choice("Which option?", { patrol: "patrol", hold: "hold" }), raise_alarm: noul("Raise the alarm?") },
-  analysis: { guards: [], alarm: 0, radioTrust: "high", activeReport: null, vaultOpen: false },
+  analysis: { guards: [], alarm: 0, radioTrust: "high", activeReport: null, vaultOpen: false, blackout: null },
   signal: AbortSignal.timeout(timeoutMs),
 });
 
@@ -81,7 +81,7 @@ describe("proveedor real ante 429", () => {
 describe("servidor", () => {
   const level = LEVELS.museo!;
   test("el respaldo lo decide el mock y queda marcado como respaldo", async () => {
-    const { response, record } = await decideTurn("enemy-turn", { state: newGame(level, "impulsivo", 3), fallback: true });
+    const { response, record } = await decideTurn({ state: newGame(level, "impulsivo", 3), fallback: true });
     assert.equal(response.meta.source, "respaldo");
     assert.equal(record.source, "respaldo");
     assert.equal(record.mode, "mock");
@@ -89,15 +89,14 @@ describe("servidor", () => {
   });
   test("raise_alarm cuenta solo desde 50 %: sin evidencia no, con un avistamiento sí (mock: 0.03 / 0.6)", async () => {
     const quiet = newGame(level, "cauteloso", 3);
-    assert.equal((await decideTurn("enemy-turn", { state: quiet, fallback: false })).response.raiseAlarm.raised, false);
+    assert.equal((await decideTurn({ state: quiet, fallback: false })).response.raiseAlarm.raised, false);
     const seen = newGame(level, "cauteloso", 3);
     seen.guards[1]!.lastSighting = { thief: "zorro", pos: { x: 7, y: 9 }, turn: 1 };
-    assert.equal((await decideTurn("enemy-turn", { state: seen, fallback: false })).response.raiseAlarm.raised, true);
+    assert.equal((await decideTurn({ state: seen, fallback: false })).response.raiseAlarm.raised, true);
   });
-  test("la infiltrada solo responde si está activa este turno", async () => {
+  test("una foto que no corresponde al nivel se rechaza", async () => {
     const s = newGame(level, "cauteloso", 3);
-    await assert.rejects(decideTurn("spy", { state: s, fallback: false }), BadRequest);
-    s.spy.activeThisTurn = true;
-    assert.equal((await decideTurn("spy", { state: s, fallback: false })).record.endpoint, "spy");
+    s.guards = s.guards.slice(1); // falta un guardia
+    await assert.rejects(decideTurn({ state: s, fallback: false }), BadRequest);
   });
 });

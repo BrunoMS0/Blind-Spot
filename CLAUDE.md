@@ -1,4 +1,4 @@
-# El golpe — guía para Claude
+# Blind Spot — guía para Claude
 
 Juego táctico por turnos de robo nocturno a un museo: el jugador mueve a los ladrones y Jev (TypeSafe AI)
 decide qué hacen los guardias. Proyecto para aprender a usar bien Jev: **la claridad del código importa más
@@ -51,7 +51,7 @@ Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 
   No agregar respaldos automáticos: el jugador decide.
 - Limitador: de a una llamada y `JEV_MIN_INTERVAL_MS` entre inicios. Por eso el conteo de 429 por llamada
   (`rateLimited`, contado en un `fetch` envoltorio) es exacto.
-- Caché por (estado, preguntas): la infiltrada y el turno enemigo no repiten una llamada idéntica.
+- Caché por (estado, preguntas): una llamada idéntica (p. ej. al reintentar) no se repite.
 - Tope diario `JEV_DAILY_BUDGET_USD`; al superarlo, decide el mock y se avisa en `meta.note`.
 - Las pruebas de 429 usan un `fetch` falso (`tests/jev.test.ts`): no tocan el gateway.
 
@@ -66,19 +66,24 @@ Medido en BomberJev: el plan gratuito devuelve 429 de forma variable, incluso a 
 - Todo cambio en el estado para Jev, las preguntas o las doctrinas se mide con `npm run bench -- --real --save
   vN` y se compara con la versión anterior (`logs/bench-v*.json`) antes de darlo por bueno. Los pares del banco
   cambian solo el comandante; agregar situaciones al final, no cambiar las existentes.
-  Historial: v1 9/11; v2 11/11 (rencoroso atado a `shared.radio_trust`, `shared.sightings`). Mock: 8/11.
+  Historial: v1 9/11; v2 11/11 (rencoroso atado a `shared.radio_trust`, `shared.sightings`); v3 13/13 (apagón:
+  impulsivo revisa 0.99, cauteloso 0.01; el cauteloso también descarta apagones). Mock: 9/13.
 - Reutilizar de `../BomberJev` lo que sirva (proveedores, budget, decision-log, rate-probe) en vez de reescribirlo.
 - Arte y personajes originales.
 
 ## Fases (no mezclarlas)
 
 1. Reglas en `src/shared` con pruebas; juego jugable en Phaser con arte simple y el proveedor mock.
-2. Jev real: `/api/enemy-turn` y `/api/spy`, 429, limitador, registro, replay, `npm run jev:ping`, `bench.ts`.
-3. Jev visible: etiqueta por guardia, panel de barras, infiltrada en vivo, confianza en la radio, visor de la
+2. Jev real: `/api/enemy-turn`, 429, limitador, registro, replay, `npm run jev:ping`, `bench.ts`.
+3. Jev visible: etiqueta por guardia, panel de barras, confianza en la radio, visor de la
    llamada completa, repetición del turno enemigo.
-4. Pulido: estilo noir, luz 2D desde las linternas, partículas, tweens, selector de comandante.
+4. Pulido: luz 2D desde las linternas, partículas, tweens, selector de comandante.
+5. Rediseño: pixel art de juego clásico, pantalla completa, nombre Blind Spot (ver ARCHITECTURE.md, "Estilo").
+6. Ajustes de juego: posiciones de salida sorteadas, apagón de Zorro, habilidades siempre visibles, elegir sala
+   con cartel sobre el mapa, infiltrada quitada y panel propio para la radio.
 
-Estado: las cuatro fases hechas. Fase 4: estilo noir, luz de linternas, partículas, tweens y selector de comandante.
+Estado: fases 0 a 6 hechas. Fase 5: rediseño en pixel art de juego clásico (guía: la vista previa HTML del
+usuario), pantalla completa y nombre Blind Spot. La fase 4 (noir y neón) se descartó por verse muy moderna.
 
 ## Comandos
 
@@ -90,7 +95,7 @@ Estado: las cuatro fases hechas. Fase 4: estilo noir, luz de linternas, partícu
 - Modo: `JEV_MODE=mock|real|replay` en `.env` (o `JEV_MODE=real npm run dev` para una sola vez).
 - Partida: `http://localhost:5173/` abre el selector de comandante; `?commander=impulsivo&seed=123` lo saltea
   (misma semilla y mismas jugadas = misma partida).
-  Teclas: 1·2·3 ladrón, Esc cancela, Enter termina el turno, I infiltrada, R repite el turno enemigo, V visor
+  Teclas: 1·2·3 ladrón, Esc cancela, Enter termina el turno, R repite el turno enemigo, V visor
   de la llamada. Depurar: `__game.scene.getScene("game").state`.
 - Probar en Chrome: si la ventana queda tapada, Chrome la marca `hidden`, `requestAnimationFrame` se detiene
   y las animaciones de Phaser no terminan. Traerla al frente o probar con Chrome headless.

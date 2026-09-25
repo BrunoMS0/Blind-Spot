@@ -1,4 +1,4 @@
-# Arquitectura de El golpe
+# Arquitectura de Blind Spot
 
 Juego táctico por turnos: el jugador controla a tres ladrones y Jev (TypeSafe AI) controla a los guardias.
 El nombre del juego vive solo en `GAME_NAME` (`src/shared/config.ts`).
@@ -60,12 +60,14 @@ un guardia no use la información de otro.
 | `src/shared/analysis.ts` | `analyzeTurn()` → `TurnAnalysis`: opciones y hechos de cada guardia | 1 |
 | `src/shared/enemy-turn.ts` | `resolveEnemyTurn(level, state, decisions)` → `{ state, events }` | 1 |
 | `src/shared/rng.ts` | RNG con semilla (mulberry32) y sorteo de opciones según probabilidades | 1 |
-| `src/client/game-scene.ts` | Capas (con la de Jev), input, animación de eventos, infiltrada, repetición, visor | 0→4 |
+| `src/client/game-scene.ts` | Capas (con la de Jev), input, animación de eventos, repetición, visor | 0→5 |
 | `src/client/ui-scene.ts` | Barra superior, panel, franja de Jev, registro, fin de partida. Se redibuja con cada cambio | 0→4 |
 | `src/client/texts.ts` | Textos en español que comparten las escenas | 3 |
-| `src/client/menu-scene.ts` | Selector de comandante antes de empezar | 4 |
+| `src/client/menu-scene.ts` | Selector de comandante antes de empezar | 4→5 |
+| `src/client/art.ts` | Pixel art por código: sprites (mapas de caracteres) y el plano del museo | 5 |
+| `src/client/theme.ts`, `widgets.ts` | Paleta y tipografías; botón, caja y cifra del marcador | 5 |
 | `src/client/api.ts` | `requestTurn(endpoint, state, fallback)`; `TurnFailed` con `retryable` | 1→2 |
-| `server/index.ts` | Hono: `/api/health`, `/api/enemy-turn`, `/api/spy`. Escribe el registro y suma el gasto | 0→2 |
+| `server/index.ts` | Hono: `/api/health`, `/api/enemy-turn`. Escribe el registro y suma el gasto | 0→2 |
 | `server/turn.ts` | Un pedido: valida contra el nivel, analiza, arma preguntas, elige proveedor, sortea. Devuelve respuesta y registro | 1→2 |
 | `server/jev-state.ts` | `TurnAnalysis` + doctrina → estado en inglés + preguntas | 1 |
 | `server/doctrines.ts` | El texto de las tres doctrinas (medido con `bench.ts`) | 1→2 |
@@ -88,8 +90,7 @@ toca `window` o `process`. Las reglas nunca dibujan: devuelven estado nuevo y ev
    cada paso: `thief_moved`, `thief_seen`, `alarm_raised`.
 2. Acciones: `force_vault` (Llave, frente a la puerta) → `vault_progress` / `vault_opened`; `throw_coin`
    (Eco, ≤ 5 casillas) → `noise_made` con los guardias que lo oyen; `take_diamond` → `diamond_taken`.
-3. Radio (una por turno, 3 usos) → `radio_sent`. Infiltrada (2 usos): mientras dura el turno, cada cambio
-   pide `/api/spy` con debounce; si el estado no cambió, el servidor reutiliza la respuesta.
+3. Radio (una por turno, 3 usos) → `radio_sent`. Apagón de Zorro (2 usos) → `blackout_started`.
 4. Si el ladrón con el diamante llega a la salida → `game_over` (victoria). Si no, "Terminar turno".
 
 **Turno enemigo:**
@@ -98,11 +99,10 @@ toca `window` o `process`. Las reglas nunca dibujan: devuelven estado nuevo y ev
 2. El servidor valida con zod, carga el nivel y llama a `analyzeTurn()`.
 3. `jev-state.ts` convierte el análisis y la doctrina en estado y preguntas.
 4. Proveedor de `JEV_MODE` (con `fallback: true`, el mock; si se superó el tope diario, el mock con aviso).
-   En modo real: **caché** por (estado, preguntas) → si la infiltrada ya preguntó exactamente esto, no se
-   llama; si no, **limitador** (de a una llamada, `JEV_MIN_INTERVAL_MS` entre inicios) → `systemOne`.
+   En modo real: **caché** por (estado, preguntas) → si ya se preguntó exactamente esto (p. ej. al reintentar),
+   no se llama; si no, **limitador** (de a una llamada, `JEV_MIN_INTERVAL_MS` entre inicios) → `systemOne`.
 5. **Sorteo** (`SAMPLING=sample|argmax`): la opción de cada guardia se sortea con las probabilidades de Jev,
    con un RNG sembrado por semilla + turno + guardia. `raise_alarm` no se sortea: cuenta si p ≥ 0.5.
-   Como la semilla es la misma, la infiltrada y el turno enemigo sortean igual con la misma respuesta.
 6. Respuesta `TurnResponse` (probabilidades, opción sorteada y `raise_alarm` por guardia; `meta` con modo,
    respaldo, caché, latencia y avisos) y una línea en `logs/decisions-YYYY-MM-DD.jsonl` (`DecisionRecord`).
 7. El cliente llama a `resolveEnemyTurn()`: `guard_decided`, `guard_moved` (visión revisada en cada paso),
@@ -124,9 +124,19 @@ idénticos). Una situación sin grabación la decide el mock y lo avisa en `meta
 - Mapa de 20×14. Zonas: entrada (con la salida), galería oeste, salón central, ala este y bóveda.
   Muros y pedestales bloquean el paso y la visión. Las puertas se atraviesan y no bloquean la visión.
   La puerta de la bóveda empieza cerrada y bloquea las dos cosas hasta abrirse.
-- Ladrones: Zorro mueve 5; Llave mueve 4 y es la única que fuerza la bóveda (2 acciones frente a la puerta);
-  Eco mueve 4 y lanza una moneda a ≤ 5 casillas para hacer ruido.
+- Ladrones, cada uno con una habilidad (`THIEVES[id].ability`; `abilityState()` dice si se puede usar y, si no,
+  por qué, y la interfaz lo muestra siempre):
+  - Zorro mueve 5. **Apagón** (2 usos por partida): corta la luz de una sala hasta el final del turno enemigo;
+    ahí los guardias solo ven a `BLACKOUT_RANGE` (2) casillas. Todos se enteran: cada guardia recibe la opción
+    `check_blackout` y Jev ve `shared.lights`. Un apagón a la vez.
+  - Llave mueve 4 y es la única que fuerza la bóveda (2 acciones frente a la puerta).
+  - Eco mueve 4 y lanza una moneda a ≤ 5 casillas para hacer ruido.
 - Guardias (3, con ruta de patrulla): mueven 3 por turno (4 si persiguen). Cono de visión de 4 casillas y 90°.
+- **Posiciones de salida sorteadas** (`newGame`, con la semilla: misma semilla, misma partida): los ladrones en
+  casillas distintas de la entrada; cada guardia en una casilla de su sala (la de su posición en el nivel) y
+  mirando hacia cualquier lado, sin ver a ningún ladrón, a 6 casillas de camino o más de ellos y sin el cono
+  contra un muro; su patrulla empieza por la parada más cercana. `newFixedGame` usa las posiciones escritas en
+  el nivel: la usan las pruebas y el banco, que necesitan situaciones exactas.
 - **Alarma:** un ladrón visto sube la alarma 1, **como mucho una vez por ladrón y por fase** (fases: turno
   del jugador y turno enemigo), aunque lo vean varios guardias o durante varios pasos. El guardia recuerda
   dónde lo vio (`lastSighting`). Con alarma 3 se pierde.
@@ -137,13 +147,13 @@ idénticos). Una situación sin grabación la decide el mock y lo avisa en `meta
   Si atrapan a quien lleva el diamante, o a todo el equipo, se pierde.
 - Victoria: el ladrón con el diamante llega a la salida.
 - Opciones de cada guardia: `patrol`, `guard_vault` y `hold` siempre; `investigate_noise` si oyó un ruido
-  (≤ 8 casillas de camino); `respond_radio` si hay un reporte de movimiento activo; `chase` si recuerda
-  haber visto a alguien. **Bóveda abierta:** todos los guardias lo saben al instante (sensor).
+  (≤ 8 casillas de camino); `respond_radio` si hay un reporte de movimiento activo; `check_blackout` si hay un
+  apagón; `chase` si recuerda haber visto a alguien. **Bóveda abierta:** todos los guardias lo saben al instante
+  (sensor).
 - Radio pirateada (3 usos, una por turno): "movimiento en <zona>" o "todo despejado en <zona>". El reporte
   sigue activo hasta que otro lo reemplaza o se descubre el engaño. **Engaños:** un guardia que eligió
   `respond_radio` termina su movimiento en la zona reportada y no ve a nadie; o un guardia ve a un ladrón en
   una zona reportada como despejada. Confianza: 0 engaños → `high`, 1 → `shaken`, 2 o más → `lying`.
-- Infiltrada (2 usos): durante ese turno muestra las probabilidades de cada guardia, actualizadas en vivo.
 - Comandantes: cauteloso (protege la bóveda, casi no se distrae), impulsivo (acude a cualquier ruido o
   reporte), rencoroso (tras un engaño deja de creerle a la radio y se vuelve más agresivo).
 
@@ -160,39 +170,56 @@ idénticos). Una situación sin grabación la decide el mock y lo avisa en `meta
 | `thief_caught` | entidades: el ladrón sale del tablero |
 | `noise_made` | efectos: onda en la casilla; "?" sobre los guardias que la oyen |
 | `radio_sent`, `deception_discovered` | interfaz: reporte activo e indicador de confianza en la radio |
-| `vault_progress`, `vault_opened` | efectos: chispas y sacudida; mapa: la puerta se desliza y queda abierta |
+| `vault_progress`, `vault_opened` | efectos: chispas y sacudida; mapa: la puerta queda abierta |
 | `diamond_taken` | entidades: el diamante pasa al ladrón |
 | `guard_decided` | info de Jev: etiqueta sobre el guardia con la opción y su probabilidad |
 | `turn_ended`, `game_over` | interfaz: turno, pantalla final |
 
-## Estilo noir e iluminación (fase 4)
+## Estilo: pixel art de juego clásico (fase 5)
 
-- **Luz 2D**: Light2D de Phaser solo afecta a sprites e imágenes con textura, y aquí todo se dibuja con
-  Graphics y formas; además la luz debe respetar la visión de las reglas. Por eso la luz es una capa de oscuridad
-  (`RenderTexture`, capa `light` entre entidades y efectos) que se borra con un degradado radial. Cada
-  linterna ilumina exactamente las casillas de `visibleTiles()`, más tenue con la distancia: lo iluminado es
-  lo que las reglas consideran visible. Los ladrones, la salida y el diamante tienen un resplandor propio.
-  Se redibuja en cada paso de las animaciones (`drawVision`).
-- Las casillas de ayuda, los efectos y las etiquetas de Jev van por encima de la oscuridad.
-- **Partículas** generadas por código (sin archivos de arte): chispas doradas donde cae la moneda (que vuela en
-  arco desde Eco) y chispas de bronce en la cerradura de la bóveda; al abrirse, la puerta se desliza.
-- **Tweens**: pasos con aceleración suave, giros por el lado corto, etiquetas que aparecen con rebote, captura
-  que encoge al ladrón, el diamante que vuela hasta quien lo toma, el anillo del seleccionado que late.
+La guía visual es la vista previa en HTML que armó el usuario: pixel art, letra de máquina de escribir, colores
+apagados con dorado de acento. La fase 4 (noir y neón, degradados, esquinas redondeadas) se descartó por verse
+demasiado moderna.
+
+- **Pixel art** (`src/client/art.ts`): todo se dibuja por código a 16×16 por casilla y se amplía ×3 con filtro
+  NEAREST. Los sprites son mapas de caracteres (una letra por color); una fila que no mida 16 falla al arrancar.
+  Guardias en 4 direcciones (el oeste es el este espejado) con 2 pasos, vestidos como su comandante
+  (`COMMANDER_LOOK`: el cauteloso es un veterano con bigote y charreteras, el impulsivo va sin gorra con chaqueta
+  roja y silbato, el rencoroso de oscuro con lentes negros y una cicatriz); el retrato del menú es el mismo
+  sprite de frente. Ladrones de frente con 2 pasos y un accesorio propio (orejas de zorro, llave, capucha con
+  moneda). El museo es una sola imagen de 320×224:
+  madera en la entrada y la galería, damero con alfombra roja en el salón, damero verde en el ala este, acero
+  en la bóveda, muros con cuadros, vitrinas con jarrones y bustos, flecha de salida.
+- **Luz**: una capa de oscuridad por debajo de los personajes; cada linterna la borra en las casillas exactas de
+  `visibleTiles()` (luz por casillas, bordes duros) y encima va el tinte amarillo del cono.
+- **Ayudas en el mapa**: casillas blancas a las que se puede ir, rojas si el camino cruza la vista de un
+  guardia; recuadros dorados para la moneda; contorno punteado de la zona reportada por radio (cian =
+  movimiento, verde = despejado); la moneda en el piso con su onda mientras dura el turno.
+- **Etiquetas de papel** sobre los guardias con la decisión del último turno. Si dos se tocan, una sube
+  (`stackChips`).
+- **Elegir una sala** (apagón o radio): un cartel sobre el mapa dice qué tocar, todas las salas se contornean y
+  la que está bajo el mouse se ilumina con su nombre en el cartel (`drawPick`, `mapPrompt`).
+- **Interfaz** (`widgets.ts`, `theme.ts`): *Special Elite* para títulos y cifras, *IBM Plex Sans* para leer.
+  Botones planos con borde de 2 px (tinta = principal, dorado = tomar el diamante, naranja = modo activo).
+  Marcador de turno, alarma, usos de radio y llamadas a Jev. Columna derecha: lo que decidieron (tarjetas por
+  guardia con barras, dorado = elegida, y la alarma frente a su umbral), el panel de la radio (usos,
+  para qué sirve, confianza en tres escalones y reporte en el aire), el objetivo con "Terminar turno" y la
+  bitácora con la entrada más reciente arriba.
+- **Pantalla**: canvas 16:9 (1600×900) escalado con FIT; tecla F o botón para pantalla completa.
+- **Cuidado con los tweens infinitos** (la onda del ruido): antes de destruir sus objetos hay que detenerlos
+  (`killTweensOf`); un tween vivo sobre un objeto destruido rompe el bucle del juego.
 - **Selector de comandante** (`MenuScene`) al entrar sin parámetros; `?commander=…&seed=…` lo saltea.
 
 ## Jev visible (fase 3)
 
 - **Etiqueta** sobre cada guardia (capa de Jev, se mueve con él): opción sorteada y probabilidad. Naranja si
   era poco probable (< 20 %): así se ve que el sorteo no toma siempre la más probable.
-- **Franja de Jev** bajo el mapa (`STRIP`, la dibuja UIScene): por guardia, las barras de todas las opciones
-  ofrecidas, la elegida marcada, y la probabilidad de `raise_alarm`. Muestra la decisión del último turno o,
-  con la infiltrada activa, la predicción en vivo (sin marcar el sorteo: con la misma semilla lo delataría).
-- **Infiltrada** (tecla I, 2 usos): consulta `/api/spy` al activarse y después de cada acción del jugador,
-  agrupando cambios seguidos (debounce de 700 ms; mientras espera, la franja dice "consultando…"). Si la foto
-  no cambió, no se consulta; si cambió pero lo que ve Jev no, el servidor responde de su caché. Si el turno
-  termina sin cambios, el turno enemigo sale de la caché (0 llamadas). Si termina durante el debounce, la
-  consulta pendiente se cancela y el turno enemigo hace la única llamada.
-- **Confianza en la radio** en el panel: alta / dudosa / creen que miente (de `radioTrust()`).
+- **Barras de Jev** (columna derecha): por guardia, las barras de todas las opciones ofrecidas, la elegida
+  marcada, y la probabilidad de `raise_alarm` frente al umbral.
+- **Infiltrada: quitada.** Mostraba en vivo las probabilidades antes de terminar el turno (`/api/spy`). En la
+  práctica no aportaba una decisión clara al jugador y se quitó por decisión del usuario; su espacio pasó al
+  panel de la radio. Los registros viejos pueden tener `endpoint: "spy"`.
+- **Confianza en la radio** en el panel de la radio: le creen / dudan / no le creen (de `radioTrust()`).
 - **Visor de la llamada** (tecla V): un `<pre>` HTML sobre el juego con el estado, las preguntas y las
   respuestas de la última llamada (`TurnResponse.call`). Texto largo: mejor HTML que Phaser.
 - **Repetición** (tecla R): vuelve a animar los eventos del último turno enemigo desde el estado de antes.

@@ -5,7 +5,7 @@
 // - El `signal` que llega del servidor corta todo a JEV_RETRY_TOTAL_MS (el SDK no tiene tope total).
 // - Si no alcanza, JevUnavailable: el jugador elige reintentar o usar la decisión simulada (respaldo).
 // - Limitador: de a una llamada, y al menos JEV_MIN_INTERVAL_MS entre el inicio de dos.
-// - Caché: el mismo estado con las mismas preguntas no vuelve a llamar (infiltrada → turno enemigo).
+// - Caché: el mismo estado con las mismas preguntas no vuelve a llamar (p. ej. al reintentar o repetir un turno).
 import { APIConnectionError, APIError, APIUserAbortError, TypeSafeClient, type Fetch, type TypeSafeClientConfig } from "@typesafe-ai/sdk";
 import { env } from "../env";
 import type { DecisionProvider, ProviderOutput } from "./types";

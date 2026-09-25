@@ -10,7 +10,6 @@ import { appendDecision } from "./decision-log";
 import { env } from "./env";
 import { JevUnavailable } from "./providers/jev";
 import { BadRequest, decideTurn } from "./turn";
-import type { DecisionRecord } from "./providers/types";
 
 const app = new Hono().basePath("/api");
 
@@ -26,24 +25,22 @@ app.get("/health", (c) =>
   }),
 );
 
-// Los dos endpoints solo aceptan la foto de la partida validada: no hay forma de mandarle texto libre a Jev.
-const decide = (endpoint: DecisionRecord["endpoint"]) => async (c: Context) => {
+// Solo acepta la foto de la partida validada: no hay forma de mandarle texto libre a Jev.
+app.post("/enemy-turn", bodyLimit({ maxSize: 64 * 1024 }), async (c: Context) => {
   const parsed = TurnRequestSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: z.prettifyError(parsed.error), retryable: false } satisfies TurnError, 400);
   try {
-    const { response, record } = await decideTurn(endpoint, parsed.data);
+    const { response, record } = await decideTurn(parsed.data);
     appendDecision(record);
     recordSpend(record.costUsd);
     return c.json(response);
   } catch (e) {
     if (e instanceof BadRequest) return c.json({ error: e.message, retryable: false } satisfies TurnError, 400);
     if (e instanceof JevUnavailable) return c.json({ error: e.message, retryable: e.retryable } satisfies TurnError, 503);
-    console.error(`[${endpoint}]`, e);
+    console.error("[enemy-turn]", e);
     return c.json({ error: "internal error", retryable: true } satisfies TurnError, 500);
   }
-};
-app.post("/enemy-turn", bodyLimit({ maxSize: 64 * 1024 }), decide("enemy-turn"));
-app.post("/spy", bodyLimit({ maxSize: 64 * 1024 }), decide("spy"));
+});
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(`[${GAME_NAME}] server on http://localhost:${info.port}  mode=${env.JEV_MODE}  model=${env.JEV_MODEL}  minInterval=${env.JEV_MIN_INTERVAL_MS}ms`);

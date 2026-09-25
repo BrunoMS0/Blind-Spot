@@ -61,8 +61,29 @@ export function availableActions(level: Level, s: GameState, id: ThiefId): Thief
   const ability = THIEVES[id].ability;
   if (ability === "force_vault" && !s.vault.open && adjacent(t.pos, level.vaultDoor)) out.push("force_vault");
   if (ability === "throw_coin" && coinTargets(level, s, id).length > 0) out.push("throw_coin");
+  if (ability === "blackout" && s.blackout.usesLeft > 0 && !s.blackout.zone) out.push("blackout");
   if (s.diamond && (same(t.pos, s.diamond) || adjacent(t.pos, s.diamond))) out.push("take_diamond");
   return out;
+}
+
+/** Por qué la habilidad de un ladrón no se puede usar ahora (null = se puede). La interfaz lo explica. */
+export type AbilityBlock = "not_playing" | "caught" | "acted" | "no_uses" | "already_dark" | "far_from_vault" | "vault_open" | "no_targets";
+
+/** Las habilidades propias de los ladrones (una por ladrón, ver THIEVES en config.ts). */
+export type Ability = (typeof THIEVES)[ThiefId]["ability"];
+
+export function abilityState(level: Level, s: GameState, id: ThiefId): { action: Ability; blocked: AbilityBlock | null } {
+  const action = THIEVES[id].ability;
+  const t = s.thieves[id];
+  const blocked = ((): AbilityBlock | null => {
+    if (!playing(s)) return "not_playing";
+    if (t.caught) return "caught";
+    if (t.acted) return "acted";
+    if (action === "force_vault") return s.vault.open ? "vault_open" : adjacent(t.pos, level.vaultDoor) ? null : "far_from_vault";
+    if (action === "throw_coin") return coinTargets(level, s, id).length > 0 ? null : "no_targets";
+    return s.blackout.usesLeft === 0 ? "no_uses" : s.blackout.zone ? "already_dark" : null;
+  })();
+  return { action, blocked };
 }
 
 export function thiefAct(level: Level, state: GameState, id: ThiefId, action: ThiefAction): Result {
@@ -85,6 +106,12 @@ export function thiefAct(level: Level, state: GameState, id: ThiefId, action: Th
       s.noises.push({ pos: { ...action.target }, turn: s.turn });
       events.push({ type: "noise_made", at: { ...action.target }, heardBy: heardBy(level, s, action.target) });
       break;
+    case "blackout":
+      // Zorro corta la luz de una sala: ahí los guardias ven poco hasta que termina el turno enemigo.
+      if (!level.zones[action.zone]) throw new Error(`unknown zone ${action.zone}`);
+      s.blackout = { usesLeft: s.blackout.usesLeft - 1, zone: action.zone };
+      events.push({ type: "blackout_started", zone: action.zone });
+      break;
     case "take_diamond":
       t.hasDiamond = true;
       s.diamond = null;
@@ -94,19 +121,6 @@ export function thiefAct(level: Level, state: GameState, id: ThiefId, action: Th
   t.acted = true;
   updateOutcome(level, s, events);
   return { state: s, events };
-}
-
-/** La infiltrada: 2 usos en la partida; dura el turno en que se activa. */
-export function canUseSpy(s: GameState): boolean {
-  return playing(s) && s.spy.usesLeft > 0 && !s.spy.activeThisTurn;
-}
-
-export function activateSpy(state: GameState): Result {
-  if (!canUseSpy(state)) throw new Error("illegal: the spy is not available");
-  const s = clone(state);
-  s.spy.usesLeft--;
-  s.spy.activeThisTurn = true;
-  return { state: s, events: [] };
 }
 
 export function canUseRadio(s: GameState): boolean {

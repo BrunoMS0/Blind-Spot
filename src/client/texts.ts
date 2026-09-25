@@ -1,4 +1,5 @@
 // Textos en español que comparten las dos escenas.
+import type { Ability, AbilityBlock } from "../shared/player-turn";
 import type { CommanderId, GuardOption, LossReason, RadioTrust } from "../shared/types";
 
 /** Para el selector. La doctrina real (en inglés, la que lee Jev) vive solo en server/doctrines.ts. */
@@ -9,12 +10,32 @@ export const COMMANDER_INFO: Record<CommanderId, { name: string; blurb: string }
 };
 
 export const OPTION_LABEL: Record<GuardOption, string> = {
-  patrol: "patrullar",
-  investigate_noise: "investigar ruido",
-  respond_radio: "acudir a la radio",
-  chase: "perseguir",
-  guard_vault: "cuidar la bóveda",
-  hold: "quedarse y mirar",
+  patrol: "Seguir patrulla",
+  investigate_noise: "Investigar ruido",
+  respond_radio: "Atender la radio",
+  check_blackout: "Revisar el apagón",
+  chase: "Perseguir al intruso",
+  guard_vault: "Vigilar la bóveda",
+  hold: "Quedarse y mirar",
+};
+
+/** La habilidad de cada ladrón: nombre para su botón y su tarjeta, y para qué sirve (una línea). */
+export const ABILITY: Record<Ability, { name: string; what: string }> = {
+  blackout: { name: "Apagón", what: "Deja una sala a oscuras: ahí ven a 2 casillas." },
+  force_vault: { name: "Forzar bóveda", what: "Frente a la puerta, 2 acciones abren la bóveda." },
+  throw_coin: { name: "Lanzar moneda", what: "Hace ruido a 5 casillas o menos para distraer." },
+};
+
+/** Por qué no se puede usar la habilidad ahora (ver abilityState en player-turn.ts). */
+export const ABILITY_BLOCK: Record<AbilityBlock, string> = {
+  not_playing: "",
+  caught: "Está atrapado.",
+  acted: "Ya actuó este turno.",
+  no_uses: "Ya no le quedan apagones.",
+  already_dark: "Ya hay un apagón en curso.",
+  far_from_vault: "Acércate a la puerta de la bóveda.",
+  vault_open: "La bóveda ya está abierta.",
+  no_targets: "No hay dónde lanzar la moneda.",
 };
 
 export const LOSS: Record<LossReason, string> = {
@@ -24,12 +45,9 @@ export const LOSS: Record<LossReason, string> = {
 };
 
 export const TRUST: Record<RadioTrust, { text: string; color: string }> = {
-  high: { text: "alta", color: "#7fd48a" },
-  shaken: { text: "dudosa tras un engaño", color: "#e8d27a" },
-  lying: { text: "creen que la radio miente", color: "#ff8080" },
+  high: { text: "Seguridad le cree a la radio.", color: "#86d38a" },
+  shaken: { text: "Seguridad empieza a desconfiar de la radio.", color: "#e3b34a" },
+  lying: { text: "Seguridad cree que la radio miente.", color: "#ff7a6e" },
 };
-
-/** Color de una probabilidad. Naranja = el sorteo eligió algo poco probable (una sorpresa). */
-export const probColor = (p: number): string => (p >= 0.5 ? "#c9a3ff" : p >= 0.2 ? "#b8b2d8" : "#ffb070");
 
 export const pct = (p: number): string => `${Math.round(p * 100)} %`;

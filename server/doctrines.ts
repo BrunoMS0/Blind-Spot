@@ -4,7 +4,7 @@ import type { CommanderId } from "../src/shared/types";
 
 export const DOCTRINES: Record<CommanderId, string> = {
   cauteloso:
-    "Cautious commander. The vault is the priority: keep it protected and never leave it exposed. Treat noises and radio reports as likely distractions. Leave the patrol only for an intruder that a guard has actually seen.",
+    "Cautious commander. The vault is the priority: keep it protected and never leave it exposed. Treat noises, radio reports and blackouts as likely distractions. Leave the patrol only for an intruder that a guard has actually seen.",
   impulsivo:
     "Impulsive commander. React to everything right away: every noise, every radio report and every sighting deserves a guard running to it now. Patrolling or standing still while something is happening is a failure.",
   rencoroso:

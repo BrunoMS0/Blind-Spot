@@ -5,16 +5,17 @@ import { analyzeTurn } from "../src/shared/analysis";
 import { GameStateSchema, TurnRequestSchema } from "../src/shared/api";
 import { resolveEnemyTurn } from "../src/shared/enemy-turn";
 import { LEVELS } from "../src/shared/level";
-import { activateSpy, availableActions, moveThief, sendRadio, thiefAct } from "../src/shared/player-turn";
+import { abilityState, availableActions, moveThief, sendRadio, thiefAct } from "../src/shared/player-turn";
 import { mulberry32, rngFor, sample } from "../src/shared/rng";
-import { newGame } from "../src/shared/rules";
+import { MIN_START_DISTANCE, newFixedGame, newGame } from "../src/shared/rules";
 import type { EnemyDecisions, GameState, GuardOption } from "../src/shared/types";
+import { pathDistance } from "../src/shared/paths";
 import { canSee } from "../src/shared/vision";
 import { buildJevTurn } from "../server/jev-state";
 import { decideTurn } from "../server/turn";
 
 const level = LEVELS.museo!;
-const fresh = (): GameState => newGame(level, "cauteloso", 1);
+const fresh = (): GameState => newFixedGame(level, "cauteloso", 1); // posiciones exactas del nivel
 const guard = (s: GameState, id: string) => s.guards.find((g) => g.id === id)!;
 const everyone = (option: GuardOption, raiseAlarm = false): EnemyDecisions => ({
   guards: fresh().guards.map((g) => ({ guard: g.id, option, probability: 1 })),
@@ -31,6 +32,31 @@ describe("nivel", () => {
   });
 });
 
+describe("posiciones de salida sorteadas", () => {
+  const where = (s: GameState) => JSON.stringify([s.guards.map((g) => [g.pos, g.facing]), Object.values(s.thieves).map((t) => t.pos)]);
+  test("misma semilla, mismas posiciones; otras semillas, otras", () => {
+    assert.equal(where(newGame(level, "cauteloso", 42)), where(newGame(level, "cauteloso", 42)));
+    const layouts = new Set(Array.from({ length: 20 }, (_, i) => where(newGame(level, "cauteloso", i + 1))));
+    assert.ok(layouts.size >= 15, `solo ${layouts.size} distintas en 20 partidas`);
+  });
+  test("en 200 partidas: ladrones en la entrada, guardias en su sala, sin verse y lejos", () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const s = newGame(level, "cauteloso", seed);
+      const thieves = Object.values(s.thieves);
+      assert.equal(new Set(thieves.map((t) => `${t.pos.x},${t.pos.y}`)).size, 3, `semilla ${seed}: ladrones encimados`);
+      for (const t of thieves) assert.equal(level.zoneIds[t.pos.y]?.[t.pos.x], "entrance", `semilla ${seed}: ${t.id} fuera de la entrada`);
+      for (const g of s.guards) {
+        const home = level.guards.find((x) => x.id === g.id)!.start;
+        assert.equal(level.zoneIds[g.pos.y]?.[g.pos.x], level.zoneIds[home.y]?.[home.x], `semilla ${seed}: ${g.id} fuera de su sala`);
+        for (const t of thieves) {
+          assert.ok(!canSee(level, s, g, t.pos), `semilla ${seed}: ${g.id} ve a ${t.id} al empezar`);
+          assert.ok((pathDistance(level, s, g.pos, t.pos) ?? Infinity) >= MIN_START_DISTANCE, `semilla ${seed}: ${g.id} empieza cerca de ${t.id}`);
+        }
+      }
+    }
+  });
+});
+
 describe("visión", () => {
   const s = fresh();
   const at = (x: number, y: number, facing: "north" | "east" | "south" | "west") => ({ pos: { x, y }, facing });
@@ -44,7 +70,7 @@ describe("visión", () => {
     assert.ok(!canSee(level, s, at(10, 4, "west"), { x: 7, y: 4 }), "pedestal en (8,4)");
     assert.ok(!canSee(level, s, at(6, 5, "west"), { x: 4, y: 5 }), "muro en (5,5)");
     assert.ok(!canSee(level, s, at(16, 6, "north"), { x: 16, y: 3 }));
-    assert.ok(canSee(level, { vault: { progress: 2, open: true } }, at(16, 6, "north"), { x: 16, y: 3 }));
+    assert.ok(canSee(level, { vault: { progress: 2, open: true }, blackout: { usesLeft: 0, zone: null } }, at(16, 6, "north"), { x: 16, y: 3 }));
   });
 });
 
@@ -136,18 +162,43 @@ describe("radio", () => {
     const r = moveThief(level, s, "zorro", { x: 7, y: 6 });
     assert.equal(r.state.radio.deceptions, 1);
   });
-  test("la infiltrada: dos usos, uno por turno, se apaga al terminar el turno enemigo", () => {
-    const once = activateSpy(fresh()).state;
-    assert.deepEqual(once.spy, { usesLeft: 1, activeThisTurn: true });
-    assert.throws(() => activateSpy(once));
-    const next = resolveEnemyTurn(level, once, everyone("hold")).state;
-    assert.equal(next.spy.activeThisTurn, false);
-    assert.equal(activateSpy(next).state.spy.usesLeft, 0);
-  });
   test("una por turno y tres en total", () => {
     const s = sendRadio(level, fresh(), "movement", "vault").state;
     assert.throws(() => sendRadio(level, s, "movement", "vault"));
     assert.equal(s.radio.usesLeft, 2);
+  });
+});
+
+describe("apagón de Zorro", () => {
+  const dark = () => thiefAct(level, fresh(), "zorro", { type: "blackout", zone: "central_hall" });
+  test("en la sala a oscuras los guardias solo ven a 2 casillas", () => {
+    const s = dark().state;
+    const rojas = { pos: { x: 10, y: 6 }, facing: "west" as const };
+    assert.ok(canSee(level, fresh(), rojas, { x: 7, y: 6 }), "con luz ve a 3 casillas");
+    assert.ok(!canSee(level, s, rojas, { x: 7, y: 6 }), "a oscuras no");
+    assert.ok(canSee(level, s, rojas, { x: 8, y: 6 }), "a 2 casillas sí");
+  });
+  test("es la acción de Zorro, gasta un uso, uno a la vez y la luz vuelve al terminar el turno enemigo", () => {
+    const r = dark();
+    assert.deepEqual(r.state.blackout, { usesLeft: 1, zone: "central_hall" });
+    assert.deepEqual(r.events, [{ type: "blackout_started", zone: "central_hall" }]);
+    assert.ok(r.state.thieves.zorro.acted);
+    assert.ok(!availableActions(level, r.state, "llave").includes("blackout"), "solo Zorro");
+    const next = resolveEnemyTurn(level, r.state, everyone("hold")).state;
+    assert.equal(next.blackout.zone, null);
+    assert.equal(abilityState(level, next, "zorro").blocked, null);
+    const last = thiefAct(level, next, "zorro", { type: "blackout", zone: "vault" }).state;
+    assert.equal(abilityState(level, last, "zorro").blocked, "acted", "una acción por turno");
+    assert.equal(abilityState(level, resolveEnemyTurn(level, last, everyone("hold")).state, "zorro").blocked, "no_uses", "dos usos por partida");
+  });
+  test("todos los guardias pueden ir a revisar la sala a oscuras", () => {
+    for (const g of analyzeTurn(level, dark().state).guards) assert.ok("check_blackout" in g.options, g.guard);
+  });
+  test("cada ladrón explica por qué no puede usar su habilidad", () => {
+    const s = fresh();
+    assert.equal(abilityState(level, s, "llave").blocked, "far_from_vault");
+    assert.equal(abilityState(level, s, "eco").blocked, null);
+    assert.equal(abilityState(level, s, "zorro").action, "blackout");
   });
 });
 
@@ -203,7 +254,7 @@ describe("servidor", () => {
     let s = fresh();
     for (let i = 0; i < 20 && s.outcome.status === "playing"; i++) {
       const offered = Object.fromEntries(analyzeTurn(level, s).guards.map((g) => [g.guard, Object.keys(g.options)]));
-      const { response: r } = await decideTurn("enemy-turn", { state: s, fallback: false });
+      const { response: r } = await decideTurn({ state: s, fallback: false });
       for (const g of r.guards) assert.ok(offered[g.guard]!.includes(g.option), `${g.guard}: ${g.option}`);
       s = resolveEnemyTurn(level, s, { guards: r.guards, raiseAlarm: r.raiseAlarm.raised }).state;
       GameStateSchema.parse(s);

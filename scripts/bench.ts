@@ -7,7 +7,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { analyzeTurn } from "../src/shared/analysis";
 import { LEVELS } from "../src/shared/level";
-import { newGame } from "../src/shared/rules";
+import { newFixedGame } from "../src/shared/rules";
 import type { CommanderId, GameState, GuardOption } from "../src/shared/types";
 import { withinBudget } from "../server/budget";
 import { buildJevTurn } from "../server/jev-state";
@@ -21,6 +21,7 @@ const level = LEVELS.museo!;
 const noise = (s: GameState) => void (s.noises = [{ pos: { x: 7, y: 6 }, turn: 1 }]); // a 3 casillas de Rojas
 const report = (s: GameState) => void (s.radio.active = { kind: "movement", zone: "west_gallery", turn: 1 });
 const deceived = (s: GameState) => void (s.radio.deceptions = 1);
+const blackout = (s: GameState) => void (s.blackout.zone = "central_hall");
 const sighting = (s: GameState) => {
   s.turn = 2;
   s.guards.find((g) => g.id === "rojas")!.lastSighting = { thief: "zorro", pos: { x: 7, y: 9 }, turn: 1 };
@@ -40,6 +41,9 @@ const SITUATIONS: Situation[] = [
   { name: "cauteloso, Rojas vio a un intruso el turno pasado", commander: "cauteloso", setup: sighting, expect: { guard: "rojas", top: "chase" } },
   { name: "rencoroso tras un engaño y un avistamiento", commander: "rencoroso", setup: (s) => (deceived(s), sighting(s)), expect: { alarm: "yes" } },
   { name: "cauteloso sin ninguna evidencia", commander: "cauteloso", setup: () => {}, expect: { alarm: "no" } },
+  // v3: el apagón de Zorro (Soto está en la galería oeste, al lado del salón a oscuras)
+  { name: "impulsivo, apagón en el salón central", commander: "impulsivo", setup: blackout, expect: { guard: "soto", top: "check_blackout" } },
+  { name: "cauteloso, el mismo apagón", commander: "cauteloso", setup: blackout, expect: { guard: "soto", notTop: "check_blackout" } },
 ];
 
 const real = process.argv.includes("--real");
@@ -50,7 +54,7 @@ const provider = real ? jevProvider : mockProvider;
 
 const rows = [];
 for (const sit of SITUATIONS) {
-  const s = newGame(level, sit.commander, 1);
+  const s = newFixedGame(level, sit.commander, 1); // posiciones del nivel: situaciones exactas y comparables
   sit.setup(s);
   const analysis = analyzeTurn(level, s);
   const { jevState, questions } = buildJevTurn(level, s, analysis);

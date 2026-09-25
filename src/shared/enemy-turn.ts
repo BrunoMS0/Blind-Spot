@@ -62,7 +62,7 @@ export function resolveEnemyTurn(level: Level, state: GameState, decisions: Enem
   s.alarmRaisedBy = [];
   s.noises = [];
   s.radio.usedThisTurn = false;
-  s.spy.activeThisTurn = false;
+  s.blackout.zone = null; // vuelve la luz
   for (const t of Object.values(s.thieves)) Object.assign(t, { moved: false, acted: false });
   for (const g of s.guards) if (g.lastSighting && s.turn - g.lastSighting.turn > SIGHTING_TURNS) g.lastSighting = null;
   return { state: s, events };

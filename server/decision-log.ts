@@ -1,4 +1,4 @@
-// Registro: una línea JSON por pedido (enemy-turn o spy, en cualquier modo) en logs/decisions-YYYY-MM-DD.jsonl.
+// Registro: una línea JSON por turno enemigo (en cualquier modo) en logs/decisions-YYYY-MM-DD.jsonl.
 // Sirve para auditar, para sumar el gasto del día (budget.ts) y para el modo replay.
 // Las métricas deben filtrar mode === "real" && source === "jev" (sin respaldos).
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";

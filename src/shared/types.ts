@@ -90,13 +90,14 @@ export interface GameState {
   /** Ruidos de este turno; se borran al terminar el turno enemigo. */
   noises: Noise[];
   radio: { usesLeft: number; usedThisTurn: boolean; active: RadioReport | null; deceptions: number };
-  spy: { usesLeft: number; activeThisTurn: boolean };
+  /** El apagón de Zorro: la sala sin luz dura hasta el final del turno enemigo. */
+  blackout: { usesLeft: number; zone: ZoneId | null };
   outcome: Outcome;
 }
 
 // ---------------------------------------------------------------- acciones del jugador
 
-export type ThiefAction = { type: "force_vault" } | { type: "throw_coin"; target: Vec } | { type: "take_diamond" };
+export type ThiefAction = { type: "force_vault" } | { type: "throw_coin"; target: Vec } | { type: "blackout"; zone: ZoneId } | { type: "take_diamond" };
 
 // ---------------------------------------------------------------- lo que calcula el código para Jev
 
@@ -125,6 +126,8 @@ export interface TurnAnalysis {
   radioTrust: RadioTrust;
   activeReport: RadioReport | null;
   vaultOpen: boolean;
+  /** Sala sin luz (apagón de Zorro), o null. */
+  blackout: ZoneId | null;
 }
 
 // ---------------------------------------------------------------- decisiones y eventos
@@ -151,6 +154,7 @@ export type GameEvent =
   | { type: "noise_made"; at: Vec; heardBy: GuardId[] }
   | { type: "radio_sent"; report: RadioReport }
   | { type: "deception_discovered"; guard: GuardId; report: RadioReport; deceptions: number }
+  | { type: "blackout_started"; zone: ZoneId }
   | { type: "vault_progress"; progress: number }
   | { type: "vault_opened" }
   | { type: "diamond_taken"; thief: ThiefId }

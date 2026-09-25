@@ -1,4 +1,4 @@
-// Un pedido de decisión (turno enemigo o infiltrada): foto de la partida → análisis → estado y preguntas para
+// Un turno enemigo: foto de la partida → análisis → estado y preguntas para
 // Jev → proveedor → sorteo. Devuelve la respuesta y el registro; escribirlo y sumar el gasto es cosa de
 // index.ts, así esto se puede probar sin tocar el disco.
 import type { z } from "zod";
@@ -30,14 +30,11 @@ function checkAgainstLevel(s: GameState) {
 }
 
 export async function decideTurn(
-  endpoint: DecisionRecord["endpoint"],
   req: z.output<typeof TurnRequestSchema>,
   signal: AbortSignal = AbortSignal.timeout(env.JEV_RETRY_TOTAL_MS),
 ): Promise<{ response: TurnResponse; record: DecisionRecord }> {
   const s = req.state;
   const level = checkAgainstLevel(s);
-  // La infiltrada cuesta llamadas: solo responde si el jugador la activó este turno.
-  if (endpoint === "spy" && !s.spy.activeThisTurn) throw new BadRequest("the spy is not active this turn");
 
   const analysis = analyzeTurn(level, s);
   const { jevState, questions } = buildJevTurn(level, s, analysis);
@@ -85,7 +82,7 @@ export async function decideTurn(
   };
   const record: DecisionRecord = {
     ts: new Date().toISOString(),
-    endpoint,
+    endpoint: "enemy-turn",
     mode: provider.mode,
     source,
     requestedModel: env.JEV_MODEL,

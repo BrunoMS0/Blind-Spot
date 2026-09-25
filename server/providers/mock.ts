@@ -14,6 +14,8 @@ function preference(option: GuardOption, f: OptionFacts, analysis: TurnAnalysis)
       return 2 - f.distance / 8;
     case "respond_radio":
       return { high: 1.6, shaken: 0.6, lying: -1 }[analysis.radioTrust] - f.distance / 15;
+    case "check_blackout":
+      return 1.4 - f.distance / 12;
     case "guard_vault":
       return analysis.vaultOpen ? 3.5 : 0.2 - f.distance / 20;
     case "patrol":
